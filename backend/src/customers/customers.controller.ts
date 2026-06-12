@@ -1,0 +1,40 @@
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { CustomersService } from './customers.service';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { RequirePermission, PermissionsGuard } from '../common/guards/permissions.guard';
+
+
+@Controller('customers')
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+export class CustomersController {
+  constructor(private svc: CustomersService) {}
+
+  @Get() findAll(@Query('page') p = 1, @Query('page_size') ps = 20, @Query('keyword') kw?: string, @Query('is_active') a?: string) {
+    return this.svc.findAll(p, ps, { keyword: kw, is_active: a !== undefined ? a === 'true' : undefined });
+  }
+  @Get(':id') findOne(@Param('id') id: number) { return this.svc.findOne(id); }
+  @Post() create(@Body() body: any) { return this.svc.create(body); }
+  @Put(':id') update(@Param('id') id: number, @Body() body: any) { return this.svc.update(id, body); }
+  @Put(':id/toggle') toggle(@Param('id') id: number, @Body() body: { is_active: boolean }) { return this.svc.toggleActive(id, body.is_active); }
+  @Delete(':id') remove(@Param('id') id: number) { return this.svc.remove(id); }
+  @RequirePermission('customers', 'delete')
+
+  @Post('batch-update')
+  batchUpdate(@Body() body: { ids: number[] } & Record<string, any>) {
+    return this.svc.batchUpdate(body.ids, body);
+  }
+
+  @Post('batch-delete')
+  batchDelete(@Body() body: { ids: number[] }) {
+    return this.svc.batchDelete(body.ids);
+  }
+
+  @Get('config/types')
+  getConfigTypes() { return this.svc.getConfigTypes(); }
+
+  @Put('config/types')
+  updateConfigTypes(@Body() body: { types?: string[]; levels?: string[] }) {
+    return this.svc.updateConfigTypes(body);
+  }
+
+}

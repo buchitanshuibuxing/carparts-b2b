@@ -1,0 +1,70 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Testing
+coverage/
+
+# Production
+build/
+dist/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Uploads
+uploads/*
+!uploads/.gitkeep
+
+# Backups
+backups/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Build artifacts
+*.tsbuildinfo
+dist.bak/
+
+# PM2
+.pm2/
+
+# SSL certificates
+*.pem
+*.key
+*.crt
+
+# Project specific
+conversation-*.txt
+*.zip
+QA-Report-*.md
+修改影响分析报告.md
+报价单.html
+rest2.0ocrv1webimage.js
+frontend/QA-Report-*.md
+Car Parts B2B 项目质量检测报告.md
