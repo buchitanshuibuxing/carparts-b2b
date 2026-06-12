@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, UseInterceptors, UploadedFile, UploadedFiles, Res, BadRequestException } from '@nestjs/common';
-import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from "@nestjs/platform-express";
+import { fileFilter } from "../common/filters/file-filter";
 import type { Response } from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -7,9 +8,11 @@ import { AssetsService } from './assets.service';
 import { ImportSourcesService } from './import-sources.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { RequirePermission, PermissionsGuard } from '../common/guards/permissions.guard';
+
 
 @Controller('assets')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class AssetsController {
   constructor(
     private svc: AssetsService,
@@ -18,7 +21,7 @@ export class AssetsController {
 
   // Upload single
   @Post('upload')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 200 * 1024 * 1024 } }))
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 2048 * 1024 * 1024 }, fileFilter }))
   upload(@UploadedFile() file: Express.Multer.File, @Body() body: any, @CurrentUser('id') uid: number) {
     if (!file) throw new BadRequestException('请选择文件');
     return this.svc.upload(file, {
@@ -27,19 +30,21 @@ export class AssetsController {
       category: body.category,
       tag_ids: body.tag_ids ? JSON.parse(body.tag_ids) : undefined,
       uploaded_by: uid,
+      folder_hint: body.folder_hint,
     });
   }
 
   // Batch upload
   @Post('batch-upload')
-  @UseInterceptors(FilesInterceptor('files', 50, { limits: { fileSize: 200 * 1024 * 1024 } }))
+  @UseInterceptors(FilesInterceptor("files", 10000, { limits: { fileSize: 2048 * 1024 * 1024 }, fileFilter }))
   batchUpload(@UploadedFiles() files: Express.Multer.File[], @Body() body: any, @CurrentUser('id') uid: number) {
     if (!files?.length) throw new BadRequestException('请选择文件');
-    return this.svc.batchUpload(files, { classification_id: body.classification_id ? Number(body.classification_id) : undefined, uploaded_by: uid });
+    return this.svc.batchUpload(files, { classification_id: body.classification_id ? Number(body.classification_id) : undefined, uploaded_by: uid, folder_hint: body.folder_hint, file_paths: body.file_paths });
   }
 
   // List
   @Get()
+  @RequirePermission('assets', 'view')
   findAll(
     @Query('page') p = 1, @Query('page_size') ps = 20,
     @Query('classification_id') cid?: number, @Query('keyword') kw?: string,
@@ -93,6 +98,7 @@ export class AssetsController {
   }
 
   @Delete('sources/:id')
+  @RequirePermission('assets', 'delete')
   deleteSource(@Param('id') id: number) { return this.importSourcesSvc.remove(id); }
 
   @Post('sources/:id/test')
@@ -118,14 +124,17 @@ export class AssetsController {
 
   // Update
   @Put(':id')
+  @RequirePermission('assets', 'edit')
   update(@Param('id') id: number, @Body() body: any) { return this.svc.update(id, body); }
 
   // Delete
   @Delete(':id')
+  @RequirePermission('assets', 'delete')
   remove(@Param('id') id: number) { return this.svc.remove(id); }
 
   // Batch operations
   @Post('batch-delete')
+  @RequirePermission('assets', 'delete')
   batchDelete(@Body() body: { ids: number[] }) { return this.svc.batchDelete(body.ids); }
 
   @Post('batch-classify')
@@ -159,6 +168,7 @@ export class AssetsController {
   @Post('meta/classifications')
   createClassification(@Body() body: any) { return this.svc.createClassification(body); }
   @Delete('meta/classifications/:id')
+  @RequirePermission('assets', 'delete')
   deleteClassification(@Param('id') id: number) { return this.svc.deleteClassification(id); }
 
   // Tags
@@ -167,6 +177,7 @@ export class AssetsController {
   @Post('meta/tags')
   createTag(@Body() body: any) { return this.svc.createTag(body); }
   @Delete('meta/tags/:id')
+  @RequirePermission('assets', 'delete')
   deleteTag(@Param('id') id: number) { return this.svc.deleteTag(id); }
 
   // Image operations

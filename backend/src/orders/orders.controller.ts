@@ -2,13 +2,16 @@ import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } fro
 import { OrdersService } from './orders.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { RequirePermission, PermissionsGuard } from '../common/guards/permissions.guard';
+
 
 @Controller('orders')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class OrdersController {
   constructor(private svc: OrdersService) {}
 
   @Get()
+  @RequirePermission('orders', 'view')
   findAll(@Query('page') p = 1, @Query('page_size') ps = 100, @Query('status') s?: string, @Query('customer_id') cid?: number, @Query('keyword') kw?: string) {
     return this.svc.findAll(p, ps, { status: s, customer_id: cid, keyword: kw });
   }
@@ -27,9 +30,11 @@ export class OrdersController {
   findOne(@Param('id') id: number) { return this.svc.findOne(id); }
 
   @Post()
+  @RequirePermission('orders', 'create')
   create(@Body() body: any, @CurrentUser('id') uid: number) { return this.svc.create(body, uid); }
 
   @Put(':id')
+  @RequirePermission('orders', 'edit')
   updateOrder(@Param('id') id: number, @Body() body: any) { return this.svc.updateOrder(id, body); }
 
   @Put(':id/status')
@@ -45,9 +50,11 @@ export class OrdersController {
   updateItem(@Param('itemId') itemId: number, @Body() body: any) { return this.svc.updateItem(itemId, body); }
 
   @Delete('items/:itemId')
+  @RequirePermission('orders', 'delete')
   removeItem(@Param('itemId') itemId: number) { return this.svc.removeItem(itemId); }
 
   @Delete(':id')
+  @RequirePermission('orders', 'delete')
   deleteOrder(@Param('id') id: number) { return this.svc.deleteOrder(id); }
 
   @Post('batch-update-status')

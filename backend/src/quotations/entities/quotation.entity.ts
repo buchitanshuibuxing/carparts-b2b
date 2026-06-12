@@ -9,7 +9,7 @@ export class Quotation {
   quotationNumber: string;
 
   @Column({ name: 'template_id', nullable: true })
-  templateId?: number;
+  templateId: number;
 
   @Column({ name: 'customer_id', nullable: true })
   customerId: number;
@@ -29,7 +29,6 @@ export class Quotation {
   @Column({ name: 'pdf_path', default: '' })
   pdfPath: string;
 
-  // Seller info
   @Column({ name: 'seller_company', default: '' })
   sellerCompany: string;
 
@@ -48,7 +47,6 @@ export class Quotation {
   @Column({ name: 'logo_url', default: '' })
   logoUrl: string;
 
-  // Buyer info
   @Column({ name: 'buyer_company', default: '' })
   buyerCompany: string;
 
@@ -64,7 +62,6 @@ export class Quotation {
   @Column({ name: 'buyer_address', default: '' })
   buyerAddress: string;
 
-  // Trade info
   @Column({ name: 'trade_terms', default: '' })
   tradeTerms: string;
 
@@ -77,25 +74,29 @@ export class Quotation {
   @Column({ name: 'delivery_time', default: '' })
   deliveryTime: string;
 
-  @Column({ name: 'valid_until', type: 'date', nullable: true })
-  validUntil: string;
+  @Column({ name: 'valid_until', nullable: true })
+  validUntil: Date;
 
-  // Pricing
   @Column({ name: 'discount_pct', type: 'decimal', precision: 5, scale: 2, default: 0 })
   discountPct: number;
 
   @Column({ name: 'shipping_cost', type: 'decimal', precision: 12, scale: 2, default: 0 })
   shippingCost: number;
 
-  // Payment
   @Column({ name: 'payment_stages', type: 'jsonb', default: () => "'[]'" })
   paymentStages: any[];
 
   @Column({ name: 'payment_account_id', nullable: true })
   paymentAccountId: number;
 
-  @Column({ name: 'notes', default: '' })
+  @Column({ default: '' })
   notes: string;
+
+  @Column({ name: 'header_text', default: '' })
+  headerText: string;
+
+  @Column({ name: 'footer_text', default: '' })
+  footerText: string;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

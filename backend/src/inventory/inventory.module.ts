@@ -5,10 +5,9 @@ import { InventoryController } from './inventory.controller';
 import { Inventory } from './entities/inventory.entity';
 import { InventoryLog } from './entities/inventory-log.entity';
 import { Part } from '../parts/entities/part.entity';
-import { PartClassification } from '../parts/entities/part-classification.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Inventory, InventoryLog, Part, PartClassification])],
+  imports: [TypeOrmModule.forFeature([Inventory, InventoryLog, Part])],
   controllers: [InventoryController],
   providers: [InventoryService],
   exports: [InventoryService],

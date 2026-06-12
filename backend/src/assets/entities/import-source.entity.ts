@@ -48,7 +48,7 @@ export class ImportSource {
   errorMessage: string;
 
   @Column({ name: 'import_progress', type: 'jsonb', nullable: true })
-  importProgress: { imported: number; skipped: number; errors: number; total: number; currentFile: string } | null;
+  importProgress: { imported: number; skipped: number; errors: number; total: number; currentFile: string; fileLog?: any[] } | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

@@ -31,8 +31,24 @@ export class AssetsService {
     private settingsSvc: SettingsService,
   ) {}
 
+  // ---- OE Number Extraction ----
+  private extractOeNumber(filename: string): string | null {
+    const noExt = filename.replace(/\.[^.]+$/, "").trim();
+    // Try to find OE pattern directly in the full filename (most reliable)
+    // This handles: 3SF79-AQ000(1).JPG, 27410-23700-1.jpg, photo_54610-2E100.jpg
+    const oePatterns = [
+      /([A-Z0-9]{2,6}-[A-Z0-9]{4,8})/i,  // Standard: 27410-23700, 3SF79-AQ000, 54610-2E100, 18849-09085
+      /([A-Z]\d{10})/i,                    // Mercedes: A0009982504
+    ];
+    for (const pattern of oePatterns) {
+      const m = noExt.match(pattern);
+      if (m) return m[1].toUpperCase();
+    }
+    return null;
+  }
+
   // ---- Upload ----
-  async upload(file: Express.Multer.File, data: { part_id?: number; classification_id?: number; category?: string; tag_ids?: number[]; uploaded_by?: number }) {
+  async upload(file: Express.Multer.File, data: { part_id?: number; classification_id?: number; category?: string; tag_ids?: number[]; uploaded_by?: number; folder_hint?: string }) {
     const mimeType = file.mimetype || 'application/octet-stream';
     const isVideo = mimeType.startsWith('video/');
 
@@ -75,6 +91,24 @@ export class AssetsService {
     });
     await this.assetRepo.save(asset);
 
+    // Auto-detect OE number from filename or folder hint
+    const oeHint = data.folder_hint || this.extractOeNumber(file.originalname);
+    if (oeHint && !isVideo) {
+      const part = await this.partRepo.findOne({ where: { oeNumber: oeHint } });
+      const updateData: any = { recognizedOeNumber: oeHint };
+      if (part) {
+        updateData.partId = part.id;
+        updateData.recognizedPartType = part.category || "";
+        updateData.recognizedBrand = part.brand || "";
+        updateData.partNameCn = part.partNameCn || "";
+        updateData.partNameEn = part.partNameEn || "";
+        updateData.recognitionStatus = "done";
+        updateData.ocrStatus = "done";
+        this.logger.log(`[Upload] Auto-matched OE ${oeHint} -> Part ${part.id} (${part.partNameCn})`);
+      }
+      await this.assetRepo.update(asset.id, updateData);
+    }
+
     // Link tags
     if (data.tag_ids?.length) {
       for (const tagId of data.tag_ids) {
@@ -91,11 +125,30 @@ export class AssetsService {
     return this.findOne(asset.id);
   }
 
-  async batchUpload(files: Express.Multer.File[], data: { classification_id?: number; uploaded_by?: number }) {
+  async batchUpload(files: Express.Multer.File[], data: { classification_id?: number; uploaded_by?: number; folder_hint?: string; file_paths?: string }) {
+    // Parse per-file paths for OE extraction from subfolder names
+    let filePaths: string[] = [];
+    if (data.file_paths) {
+      try { filePaths = JSON.parse(data.file_paths); } catch {}
+    }
+
     const results: any[] = [];
-    for (const file of files) {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
       try {
-        const asset = await this.upload(file, { classification_id: data.classification_id, uploaded_by: data.uploaded_by });
+        // Extract OE from the file's parent folder name
+        let fileFolderHint = data.folder_hint;
+        const filePath = filePaths[i] || "";
+        if (filePath) {
+          const parts = filePath.split("/");
+          if (parts.length >= 2) {
+            // Parent folder name is the second-to-last segment
+            const parentFolder = parts[parts.length - 2];
+            const oeFromFolder = this.extractOeNumber(parentFolder);
+            fileFolderHint = oeFromFolder || parentFolder;
+          }
+        }
+        const asset = await this.upload(file, { classification_id: data.classification_id, uploaded_by: data.uploaded_by, folder_hint: fileFolderHint });
         results.push({ success: true, asset });
       } catch (error) {
         results.push({ success: false, file: file.originalname, error: error.message });
@@ -403,13 +456,6 @@ export class AssetsService {
           partMatch.partId = part.id;
           partMatch.partNameCn = part.partNameCn || '';
           partMatch.partNameEn = part.partNameEn || '';
-          // Fill brand and classification from part catalog (only if asset field is empty)
-          if (!refreshedAsset?.recognizedBrand && part.brand) {
-            partMatch.recognizedBrand = part.brand;
-          }
-          if (!refreshedAsset?.classificationId && part.classificationId) {
-            partMatch.classificationId = part.classificationId;
-          }
           this.logger.log(`[Part Match] Asset ${id} → Part ${part.id} (OE: ${oeToMatch})`);
         } else {
           // No part in DB, use AI to look up part name by OE number

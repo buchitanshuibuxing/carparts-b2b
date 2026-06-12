@@ -2,13 +2,16 @@ import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } fro
 import { InventoryService } from './inventory.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { RequirePermission, PermissionsGuard } from '../common/guards/permissions.guard';
+
 
 @Controller('inventory')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class InventoryController {
   constructor(private inventoryService: InventoryService) {}
 
   @Get()
+  @RequirePermission('inventory', 'view')
   findAll(
     @Query('page') page: number = 1,
     @Query('page_size') pageSize: number = 20,
@@ -44,24 +47,22 @@ export class InventoryController {
   }
 
   @Put(':id')
+  @RequirePermission('inventory', 'edit')
   updateOne(@Param('id') id: number, @Body() body: { warehouse_location?: string; warehouse_zone?: string; min_stock?: number; max_stock?: number; notes?: string }) {
     return this.inventoryService.updateOne(id, body);
   }
 
   @Delete(':id')
+  @RequirePermission('inventory', 'delete')
   removeOne(@Param('id') id: number) {
     return this.inventoryService.removeOne(id);
-  }
-
-  @Post()
-  create(@Body() body: { part_id: number; quantity?: number; warehouse_location?: string; warehouse_zone?: string; min_stock?: number; max_stock?: number; notes?: string }, @CurrentUser('id') userId: number) {
-    return this.inventoryService.create(body, userId);
   }
 
   @Post('sync')
   syncFromParts() {
     return this.inventoryService.syncFromParts();
   }
+
 
   @Post('batch-update')
   batchUpdate(@Body() body: { ids: number[]; warehouse_location?: string; warehouse_zone?: string; min_stock?: number; max_stock?: number; notes?: string }) {
@@ -71,10 +72,5 @@ export class InventoryController {
   @Post('batch-delete')
   batchDelete(@Body() body: { ids: number[] }) {
     return this.inventoryService.batchDelete(body.ids);
-  }
-
-  @Get('logs')
-  getAllLogs(@Query('page') page: number = 1, @Query('page_size') pageSize: number = 20, @Query('keyword') keyword?: string) {
-    return this.inventoryService.getAllLogs(page, pageSize, keyword);
   }
 }

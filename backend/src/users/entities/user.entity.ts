@@ -23,6 +23,9 @@ export class User {
   @Column({ name: 'avatar_url', length: 500, default: '' })
   avatarUrl: string;
 
+  @Column({ length: 100, default: '' })
+  department: string;
+
   @Column({ name: 'is_active', default: true })
   isActive: boolean;
 

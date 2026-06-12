@@ -41,11 +41,11 @@ export class Supplier {
   @Column({ default: '' })
   notes: string;
 
-  @Column({ name: 'main_products', length: 500, default: '' })
-  mainProducts: string;
-
   @Column({ name: 'is_active', default: true })
   isActive: boolean;
+
+  @Column({ name: 'main_products', length: 500, default: '' })
+  mainProducts: string;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

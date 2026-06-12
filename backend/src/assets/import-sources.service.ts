@@ -272,9 +272,10 @@ export class ImportSourcesService {
         return;
       }
 
+      const fileLog: any[] = [];
       await this.sourceRepo.update(sourceId, {
         status: 'importing',
-        importProgress: { imported: 0, skipped: 0, errors: 0, total: mediaFiles.length, currentFile: '' },
+        importProgress: { imported: 0, skipped: 0, errors: 0, total: mediaFiles.length, currentFile: '', fileLog },
       });
 
       let imported = 0;
@@ -289,7 +290,7 @@ export class ImportSourcesService {
           await this.sourceRepo.update(sourceId, {
             status: 'idle',
             lastSyncAt: new Date(),
-            importProgress: { imported, skipped, errors, total: mediaFiles.length, currentFile: '' },
+            importProgress: { imported, skipped, errors, total: mediaFiles.length, currentFile: '', fileLog: fileLog.slice(-100) },
             errorMessage: `用户停止，已导入 ${imported} 个`,
           });
           return;
@@ -298,20 +299,33 @@ export class ImportSourcesService {
         const file = mediaFiles[i];
         const isVideo = VIDEO_EXTENSIONS.has(path.extname(file.name).toLowerCase());
         try {
-          // Update progress
+          // Update progress with fileLog
           await this.sourceRepo.update(sourceId, {
-            importProgress: { imported, skipped, errors, total: mediaFiles.length, currentFile: file.name },
+            importProgress: { imported, skipped, errors, total: mediaFiles.length, currentFile: file.name, fileLog: fileLog.slice(-100) },
           });
 
-          // Check if already imported
-          const existing = await this.assetRepo.findOne({ where: { fileName: file.name } });
-          if (existing) {
-            skipped++;
-            continue;
+          // Check if already imported: same fileName + same OE number = true duplicate
+          const oeHint = file.oeHint;
+          if (oeHint) {
+            const dup = await this.assetRepo.findOne({ where: { fileName: file.name, recognizedOeNumber: oeHint } });
+            if (dup) {
+              skipped++;
+              fileLog.push({ name: file.name, oe: oeHint, status: 'skip', error: '' });
+              continue;
+            }
+          } else {
+            const dup = await this.assetRepo.findOne({ where: { fileName: file.name } });
+            if (dup) {
+              skipped++;
+              fileLog.push({ name: file.name, oe: '', status: 'skip', error: '' });
+              continue;
+            }
           }
 
           // Download file with retry
+          this.logger.log(`[Import] Downloading: ${file.name} (${file.size} bytes)`);
           const buffer = await this.downloadWithRetry(source, file.path, 3);
+          this.logger.log(`[Import] Downloaded: ${file.name}, buffer size: ${buffer.length} bytes`);
 
           // Determine OE number: folder-level hint takes priority
           const nameWithoutExt = path.basename(file.name, path.extname(file.name));
@@ -368,9 +382,12 @@ export class ImportSourcesService {
               videoUuid,
             );
           } else {
+            this.logger.log(`[Import] Saving original: ${file.name}`);
             saved = await this.imageProcessing.saveOriginal(buffer, file.name);
+            this.logger.log(`[Import] Saved to: ${saved.filePath}`);
             const imgUuid = path.basename(saved.filePath, path.extname(saved.filePath));
             thumbnails = await this.imageProcessing.generateThumbnails(buffer, imgUuid);
+            this.logger.log(`[Import] Thumbnails generated: ${JSON.stringify(thumbnails)}`);
           }
 
           // Create asset record
@@ -404,11 +421,10 @@ export class ImportSourcesService {
           }
 
           imported++;
-          if (imported % 50 === 0) {
-            this.logger.log(`[Import] Progress: ${imported}/${mediaFiles.length} imported, ${errors} errors`);
-          }
+          fileLog.push({ name: file.name, oe: recognizedOeNumber || oeNumber || '', status: 'ok', error: '' });
         } catch (err) {
           errors++;
+          fileLog.push({ name: file.name, oe: file.oeHint || '', status: 'fail', error: err.message });
           this.logger.error(`[Import] Failed: ${file.name}: ${err.message}`);
         }
       }
@@ -416,7 +432,7 @@ export class ImportSourcesService {
       await this.sourceRepo.update(sourceId, {
         status: 'idle',
         lastSyncAt: new Date(),
-        importProgress: { imported, skipped, errors, total: mediaFiles.length, currentFile: '' },
+        importProgress: { imported, skipped, errors, total: mediaFiles.length, currentFile: '', fileLog: fileLog.slice(-200) },
         errorMessage: '',
       });
 

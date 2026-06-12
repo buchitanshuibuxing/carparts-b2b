@@ -28,4 +28,7 @@ export class OrderItem {
 
   @Column({ default: '' })
   notes: string;
+
+  @Column({ name: 'package_name', nullable: true })
+  packageName: string;
 }

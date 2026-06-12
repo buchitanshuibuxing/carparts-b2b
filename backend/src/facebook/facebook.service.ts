@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import { Repository, LessThanOrEqual } from 'typeorm';
 import { FacebookPage } from './entities/facebook-page.entity';
 import { FacebookPost } from './entities/facebook-post.entity';
@@ -17,6 +18,7 @@ export class FacebookService {
     @InjectRepository(ImageAsset) private assetRepo: Repository<ImageAsset>,
     @InjectRepository(Part) private partRepo: Repository<Part>,
     private aiGenerator: AiPostGenerator,
+    private dataSource: DataSource,
   ) {}
 
   // ---- Pages ----
@@ -195,7 +197,8 @@ export class FacebookService {
       parts.push(partInfo);
     }
 
-    const generatedText = this.aiGenerator.generatePost(parts, data.template, data.custom_prompt);
+    // Call async AI generator
+    const generatedText = await this.aiGenerator.generatePost(parts, data.template, data.custom_prompt);
 
     return {
       text: generatedText,
@@ -232,4 +235,41 @@ export class FacebookService {
       shares: data.shares?.count || 0,
     };
   }
+
+  async translateText(text: string, targetLang: string = 'zh'): Promise<string> {
+    const rows = await this.dataSource.query(
+      "SELECT key, value FROM settings WHERE key IN ('ai_recognition_api_key', 'ai_recognition_model')"
+    );
+    const config = {};
+    rows.forEach(r => { config[r.key] = r.value; });
+    const apiKey = config['ai_recognition_api_key'] || '';
+    const model = config['ai_recognition_model'] || 'glm-4-flash';
+    if (!apiKey) return '';
+
+    const langName = targetLang === 'zh' ? 'Chinese' : 'English';
+    try {
+      const response = await fetch('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [
+            { role: 'system', content: `You are a translator. Translate the text to ${langName}. Keep line breaks and hashtags. Output ONLY the translation. Do not repeat or explain.` },
+            { role: 'user', content: text },
+          ],
+          temperature: 0.3,
+          max_tokens: 1000,
+        }),
+      });
+      const data = await response.json();
+      return data.choices?.[0]?.message?.content || '';
+    } catch (err: any) {
+      this.logger.error('Translation failed: ' + err.message);
+      return '';
+    }
+  }
+
 }

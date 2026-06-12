@@ -7,11 +7,39 @@ import { Setting } from './entities/setting.entity';
 export class SettingsService {
   private readonly logger = new Logger(SettingsService.name);
 
+  // Sensitive field patterns
+  private readonly SENSITIVE_PATTERNS = ['key', 'secret', 'password', 'token', 'credential'];
+
   constructor(@InjectRepository(Setting) private repo: Repository<Setting>) {}
 
   async getAll(): Promise<Record<string, string>> {
     const settings = await this.repo.find();
+    const result: Record<string, string> = {};
+    for (const s of settings) {
+      const value = (s.value || '').trim();
+      if (this.isSensitiveKey(s.key)) {
+        result[s.key] = this.maskValue(value);
+      } else {
+        result[s.key] = value;
+      }
+    }
+    return result;
+  }
+
+  async getAllUnmasked(): Promise<Record<string, string>> {
+    const settings = await this.repo.find();
     return settings.reduce((acc, s) => ({ ...acc, [s.key]: (s.value || '').trim() }), {} as Record<string, string>);
+  }
+
+  private isSensitiveKey(key: string): boolean {
+    const lowerKey = key.toLowerCase();
+    return this.SENSITIVE_PATTERNS.some(pattern => lowerKey.includes(pattern));
+  }
+
+  private maskValue(value: string): string {
+    if (!value) return '';
+    if (value.length <= 8) return '****';
+    return value.substring(0, 4) + '****' + value.substring(value.length - 4);
   }
 
   async update(key: string, value: string) {
@@ -22,7 +50,7 @@ export class SettingsService {
   }
 
   async testConnection(type: string): Promise<{ success: boolean; message: string }> {
-    const settings = await this.getAll();
+    const settings = await this.getAllUnmasked();
     try {
       switch (type) {
         case 'ocr': return await this.testOcr(settings);
@@ -69,7 +97,6 @@ export class SettingsService {
     const secretKey = settings.ocr_api_secret;
     if (!secretId || !secretKey) return { success: false, message: '请填写 SecretId 和 SecretKey' };
 
-    // Minimal test: just verify credentials format and make a lightweight API call
     const timestamp = Math.floor(Date.now() / 1000);
     const date = new Date(timestamp * 1000).toISOString().slice(0, 10);
     const service = 'ocr';
@@ -163,12 +190,10 @@ export class SettingsService {
 
     if (!apiKey) return { success: false, message: '请填写 API Key' };
 
-    // Anthropic uses different API format
     if (apiType === 'anthropic') {
       return this.testAnthropicApi(apiKey, apiUrl || 'https://api.anthropic.com/v1/messages', model || 'claude-sonnet-4-20250514');
     }
 
-    // All other providers use OpenAI-compatible format
     const PROVIDER_URLS: Record<string, string> = {
       zhipu: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
       deepseek: 'https://api.deepseek.com/v1/chat/completions',
@@ -213,7 +238,7 @@ export class SettingsService {
     return { success: false, message: `认证失败: ${errMsg}` };
   }
 
-  // ---- Crypto helpers (same as OcrService) ----
+  // ---- Crypto helpers ----
   private async sha256Hex(message: string): Promise<string> {
     const encoder = new TextEncoder();
     const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(message));

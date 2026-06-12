@@ -8,6 +8,9 @@ export class Order {
   @Column({ name: 'order_number', unique: true })
   orderNumber: string;
 
+  @Column({ name: 'quotation_number', nullable: true })
+  quotationNumber: string;
+
   @Column({ name: 'customer_id' })
   customerId: number;
 
@@ -20,6 +23,9 @@ export class Order {
   @Column({ name: 'total_amount', type: 'decimal', precision: 12, scale: 2, default: 0 })
   totalAmount: number;
 
+  @Column({ name: 'paid_amount', type: 'decimal', precision: 12, scale: 2, default: 0 })
+  paidAmount: number;
+
   @Column({ default: 'USD' })
   currency: string;
 
@@ -28,6 +34,9 @@ export class Order {
 
   @Column({ name: 'shipping_address', default: '' })
   shippingAddress: string;
+
+  @Column({ name: 'shipping_cost', type: 'decimal', precision: 12, scale: 2, default: 0 })
+  shippingCost: number;
 
   @Column({ name: 'tracking_number', default: '' })
   trackingNumber: string;

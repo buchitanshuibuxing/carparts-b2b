@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { Price } from './entities/price.entity';
 import { PriceLog } from './entities/price-log.entity';
 import { Part } from '../parts/entities/part.entity';
+import { Setting } from '../settings/entities/setting.entity';
 
 @Injectable()
 export class PricesService {
@@ -11,45 +12,8 @@ export class PricesService {
     @InjectRepository(Price) private priceRepo: Repository<Price>,
     @InjectRepository(PriceLog) private logRepo: Repository<PriceLog>,
     @InjectRepository(Part) private partRepo: Repository<Part>,
+    @InjectRepository(Setting) private settingsRepo: Repository<Setting>,
   ) {}
-
-  async findAll(page = 1, limit = 20, filters?: { keyword?: string; price_type?: string }) {
-    const qb = this.priceRepo.createQueryBuilder('price');
-
-    // If keyword search, find matching part IDs first
-    if (filters?.keyword) {
-      const matchingParts = await this.partRepo.createQueryBuilder('p')
-        .select('p.id')
-        .where('p.oe_number ILIKE :kw', { kw: `%${filters.keyword}%` })
-        .orWhere('p.part_name_cn ILIKE :kw', { kw: `%${filters.keyword}%` })
-        .orWhere('p.brand ILIKE :kw', { kw: `%${filters.keyword}%` })
-        .getMany();
-      const partIds = matchingParts.map(p => p.id);
-      if (partIds.length === 0) return { data: [], total: 0, page, limit };
-      qb.andWhere('price.part_id IN (:...partIds)', { partIds });
-    }
-
-    if (filters?.price_type) {
-      qb.andWhere('price.price_type = :pt', { pt: filters.price_type });
-    }
-
-    qb.orderBy('price.createdAt', 'DESC')
-      .skip((page - 1) * limit).take(limit);
-
-    const [items, total] = await qb.getManyAndCount();
-
-    // Two-step: batch fetch parts
-    const partIds = [...new Set(items.map(i => i.partId).filter(Boolean))];
-    const parts = partIds.length ? await this.partRepo.find({ where: { id: In(partIds) } }) : [];
-    const partMap = new Map(parts.map(p => [p.id, p]));
-
-    const enriched = items.map(item => ({
-      ...item,
-      part: partMap.get(item.partId) || null,
-    }));
-
-    return { data: enriched, total, page, limit };
-  }
 
   async findByPart(partId: number) {
     return this.priceRepo.find({ where: { partId }, order: { priceType: 'ASC', minQuantity: 'ASC' } });
@@ -67,7 +31,6 @@ export class PricesService {
         });
       }
       existing.unitPrice = data.unit_price;
-      existing.currency = data.currency || existing.currency;
       existing.maxQuantity = data.max_quantity || 99999;
       existing.effectiveDate = data.effective_date || '';
       existing.expiryDate = data.expiry_date || '';
@@ -83,102 +46,111 @@ export class PricesService {
     return saved;
   }
 
-  async updateOne(id: number, data: any) {
-    const price = await this.priceRepo.findOne({ where: { id } });
-    if (!price) throw new NotFoundException('价格记录不存在');
-    if (data.unit_price !== undefined && Number(data.unit_price) !== Number(price.unitPrice)) {
-      await this.logRepo.save({
-        priceId: price.id, oldPrice: price.unitPrice, newPrice: data.unit_price,
-        changeReason: data.reason || '', operator: data.operator || 'system',
-      });
-      price.unitPrice = data.unit_price;
-    }
-    if (data.price_type !== undefined) price.priceType = data.price_type;
-    if (data.currency !== undefined) price.currency = data.currency;
-    if (data.min_quantity !== undefined) price.minQuantity = data.min_quantity;
-    if (data.max_quantity !== undefined) price.maxQuantity = data.max_quantity;
-    if (data.effective_date !== undefined) price.effectiveDate = data.effective_date;
-    if (data.expiry_date !== undefined) price.expiryDate = data.expiry_date;
-    if (data.notes !== undefined) price.notes = data.notes;
-    return this.priceRepo.save(price);
-  }
-
   async deletePrice(id: number) {
-    await this.priceRepo.delete(id);
-  }
-
-  async batchUpdate(ids: number[], data: any) {
-    if (!ids.length) return { updated: 0 };
-    const prices = await this.priceRepo.find({ where: { id: In(ids) } });
-    for (const price of prices) {
-      if (data.unit_price !== undefined && Number(data.unit_price) !== Number(price.unitPrice)) {
-        await this.logRepo.save({
-          priceId: price.id, oldPrice: price.unitPrice, newPrice: data.unit_price,
-          changeReason: data.reason || '批量修改', operator: data.operator || 'system',
-        });
-        price.unitPrice = data.unit_price;
-      }
-      if (data.price_type !== undefined) price.priceType = data.price_type;
-      if (data.currency !== undefined) price.currency = data.currency;
-      if (data.min_quantity !== undefined) price.minQuantity = data.min_quantity;
-      if (data.max_quantity !== undefined) price.maxQuantity = data.max_quantity;
-      if (data.effective_date !== undefined) price.effectiveDate = data.effective_date;
-      if (data.expiry_date !== undefined) price.expiryDate = data.expiry_date;
-      if (data.notes !== undefined) price.notes = data.notes;
+    // Check for associated price_log
+    const logCount = await this.logRepo.count({ where: { priceId: id } });
+    if (logCount > 0) {
+      throw new BadRequestException('该价格有关联的历史记录，无法删除。');
     }
-    await this.priceRepo.save(prices);
-    return { updated: prices.length };
-  }
 
-  async batchDelete(ids: number[]) {
-    if (!ids.length) return { deleted: 0 };
-    await this.priceRepo.delete(ids);
-    return { deleted: ids.length };
+    await this.priceRepo.delete(id);
   }
 
   async getHistory(partId: number) {
     const prices = await this.priceRepo.find({ where: { partId } });
     const ids = prices.map(p => p.id);
     if (ids.length === 0) return [];
-    const logs = await this.logRepo.createQueryBuilder('log')
-      .where('log.price_id IN (:...ids)', { ids })
-      .orderBy('log.created_at', 'DESC')
-      .getMany();
-    // Enrich with price type info
-    const priceMap = new Map(prices.map(p => [p.id, p]));
-    return logs.map(log => ({
-      ...log,
-      priceType: priceMap.get(log.priceId)?.priceType || '',
-      currency: priceMap.get(log.priceId)?.currency || '',
-    }));
+    return this.logRepo.createQueryBuilder('log').where('log.price_id IN (:...ids)', { ids }).orderBy('log.created_at', 'DESC').getMany();
   }
 
   async syncFromParts() {
-    // Find all active parts that don't have any price records
     const allParts = await this.partRepo.find({ where: { isActive: true } });
-    if (allParts.length === 0) return { synced: 0, skipped: 0 };
+    const existingPrices = await this.priceRepo.find();
+    const existingPartIds = new Set(existingPrices.map(p => p.partId));
+    const missing = allParts.filter(p => !existingPartIds.has(p.id));
 
-    const existingPartIds = new Set(
-      (await this.priceRepo.createQueryBuilder('price').select('DISTINCT price.part_id', 'partId').getRawMany()).map(r => r.partId),
-    );
+    if (missing.length === 0) return { synced: 0, skipped: allParts.length, message: "所有配件已有价格" };
 
-    const toSync = allParts.filter(p => !existingPartIds.has(p.id));
-    if (toSync.length === 0) return { synced: 0, skipped: allParts.length };
-
-    const defaultType = '批发价';
-    const prices = toSync.map(p => this.priceRepo.create({
-      partId: p.id, priceType: defaultType, currency: 'USD',
-      unitPrice: 0, minQuantity: 1, maxQuantity: 99999,
+    const records = missing.map(part => this.priceRepo.create({
+      partId: part.id,
+      priceType: "批发价",
+      currency: "USD",
+      unitPrice: 0,
+      minQuantity: 1,
+      maxQuantity: 99999,
     }));
-    await this.priceRepo.save(prices);
+    await this.priceRepo.save(records);
+    return { synced: missing.length, skipped: allParts.length - missing.length };
+  }
 
-    // Log initial creation
-    const logs = prices.map(pr => this.logRepo.create({
-      priceId: pr.id, oldPrice: 0, newPrice: 0,
-      changeReason: '从配件目录同步', operator: 'system',
-    }));
-    await this.logRepo.save(logs);
 
-    return { synced: toSync.length, skipped: existingPartIds.size };
+  async findAll(page = 1, limit = 100, filters?: { keyword?: string; price_type?: string }) {
+    const qb = this.priceRepo.createQueryBuilder("p");
+
+    if (filters?.keyword) {
+      // Find matching part IDs first
+      const matchingParts = await this.partRepo.createQueryBuilder("pt")
+        .select("pt.id")
+        .where("pt.oe_number ILIKE :kw", { kw: "%" + filters.keyword + "%" })
+        .orWhere("pt.part_name_cn ILIKE :kw", { kw: "%" + filters.keyword + "%" })
+        .getMany();
+      const partIds = matchingParts.map(p => p.id);
+      if (partIds.length === 0) return { data: [], total: 0, page, limit };
+      qb.where("p.part_id IN (:...partIds)", { partIds });
+    }
+    if (filters?.price_type) {
+      qb.andWhere("p.price_type = :pt", { pt: filters.price_type });
+    }
+
+    qb.orderBy("p.created_at", "DESC")
+      .skip((page - 1) * limit)
+      .take(limit);
+    const [items, total] = await qb.getManyAndCount();
+
+    // Enrich with part data
+    const partIds = [...new Set(items.map(p => p.partId).filter(Boolean))];
+    const parts = partIds.length ? await this.partRepo.find({ where: { id: In(partIds) } }) : [];
+    const partMap = new Map(parts.map(p => [p.id, p]));
+
+    const enriched = items.map(price => {
+      const part = partMap.get(price.partId);
+      return {
+        ...price,
+        part: part ? { id: part.id, oeNumber: part.oeNumber, partNameCn: part.partNameCn, brand: part.brand } : null,
+      };
+    });
+
+    return { data: enriched, total, page, limit };
+  }
+
+
+  async getConfigTypes() {
+    const typesSetting = await this.settingsRepo.findOne({ where: { key: "price_types" } });
+    const cursSetting = await this.settingsRepo.findOne({ where: { key: "price_currencies" } });
+    const types = typesSetting ? JSON.parse(typesSetting.value || "[]") : ["批发价", "零售价", "成本价", "促销价"];
+    const currencies = cursSetting ? JSON.parse(cursSetting.value || "[]") : ["USD", "CNY", "EUR", "GBP", "JPY"];
+    return { types, currencies };
+  }
+
+  async updateConfigTypes(data: { types?: string[]; currencies?: string[] }) {
+    if (data.types) {
+      const existing = await this.settingsRepo.findOne({ where: { key: "price_types" } });
+      if (existing) {
+        existing.value = JSON.stringify(data.types);
+        await this.settingsRepo.save(existing);
+      } else {
+        await this.settingsRepo.save(this.settingsRepo.create({ key: "price_types", value: JSON.stringify(data.types) }));
+      }
+    }
+    if (data.currencies) {
+      const existing = await this.settingsRepo.findOne({ where: { key: "price_currencies" } });
+      if (existing) {
+        existing.value = JSON.stringify(data.currencies);
+        await this.settingsRepo.save(existing);
+      } else {
+        await this.settingsRepo.save(this.settingsRepo.create({ key: "price_currencies", value: JSON.stringify(data.currencies) }));
+      }
+    }
+    return { success: true };
   }
 }

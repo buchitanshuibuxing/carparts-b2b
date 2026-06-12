@@ -17,15 +17,6 @@ export class QuotationItem {
   @Column({ name: 'part_name' })
   partName: string;
 
-  @Column({ default: '' })
-  brand: string;
-
-  @Column({ name: 'package_name', default: '' })
-  packageName: string;
-
-  @Column({ default: 'pcs' })
-  unit: string;
-
   @Column()
   quantity: number;
 
@@ -34,4 +25,13 @@ export class QuotationItem {
 
   @Column({ type: 'decimal', precision: 12, scale: 2 })
   subtotal: number;
+
+  @Column({ default: '' })
+  brand: string;
+
+  @Column({ name: 'package_name', default: '' })
+  packageName: string;
+
+  @Column({ default: 'pcs' })
+  unit: string;
 }

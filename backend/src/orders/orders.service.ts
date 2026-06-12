@@ -99,7 +99,7 @@ export class OrdersService {
     return { order: { ...order, customer }, items: itemsWithParts };
   }
 
-  async create(data: { customer_id: number; currency?: string; shipping_method?: string; shipping_address?: string; notes?: string; allow_negative?: boolean; items: { part_id: number; quantity: number; unit_price?: number; discount_pct?: number }[] }, userId?: number) {
+  async create(data: { customer_id: number; currency?: string; shipping_method?: string; shipping_address?: string; notes?: string; allow_negative?: boolean; items: { part_id: number; quantity: number; unit_price?: number; discount_pct?: number; package_name?: string }[] }, userId?: number) {
     if (!data.items?.length) throw new BadRequestException('订单项不能为空');
     return this.dataSource.transaction(async (manager) => {
       const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -109,6 +109,7 @@ export class OrdersService {
       const order = manager.create(Order, {
         orderNumber, customerId: data.customer_id, currency: data.currency || 'USD',
         shippingMethod: data.shipping_method || '', shippingAddress: data.shipping_address || '',
+        shippingCost: (data as any).shipping_cost || 0,
         notes: data.notes || '', status: 'pending', createdBy: userId,
       });
       const saved = await manager.save(order);
@@ -121,7 +122,8 @@ export class OrdersService {
         await manager.save(OrderItem, {
           orderId: saved.id, partId: item.part_id, quantity: item.quantity,
           unitPrice: item.unit_price || 0, discountPct: discount, subtotal,
-        });
+          packageName: (item as any).package_name || null,
+        } as any);
         let inv = await manager.findOne(Inventory, { where: { partId: item.part_id }, lock: { mode: 'pessimistic_write' } });
         if (!inv) {
           inv = manager.create(Inventory, { partId: item.part_id, quantity: 0, reservedQuantity: 0 });
@@ -138,7 +140,7 @@ export class OrdersService {
         });
       }
 
-      saved.totalAmount = totalAmount;
+      saved.totalAmount = totalAmount + ((data as any).shipping_cost || 0);
       await manager.save(saved);
       const items = await manager.find(OrderItem, { where: { orderId: saved.id } });
       return { order: saved, items };
@@ -153,6 +155,13 @@ export class OrdersService {
     if (data.tracking_number !== undefined) order.trackingNumber = data.tracking_number;
     if (data.notes !== undefined) order.notes = data.notes;
     if (data.currency !== undefined) order.currency = data.currency;
+    if (data.paid_amount !== undefined) (order as any).paidAmount = Number(data.paid_amount);
+    if (data.shipping_cost !== undefined) {
+      order.shippingCost = Number(data.shipping_cost);
+      await this.orderRepo.save(order);
+      await this.recalcTotal(id);
+      return this.orderRepo.findOne({ where: { id } });
+    }
     return this.orderRepo.save(order);
   }
 
@@ -306,10 +315,11 @@ export class OrdersService {
     const orders = await this.orderRepo.find({ where: { id: In(ids) } });
     let deleted = 0;
     for (const order of orders) {
-      if (order.status === 'pending' || order.status === 'cancelled') {
-        await this.deleteOrder(order.id);
-        deleted++;
-      }
+      await this.dataSource.transaction(async (manager) => {
+        await manager.delete(OrderItem, { orderId: order.id });
+        await manager.delete(Order, order.id);
+      });
+      deleted++;
     }
     return { deleted };
   }
@@ -378,11 +388,11 @@ export class OrdersService {
   private async recalcTotal(orderId: number, manager?: any) {
     const repo = manager ? manager.getRepository(OrderItem) : this.itemRepo;
     const items = await repo.find({ where: { orderId } });
-    const total = items.reduce((sum: number, i: any) => sum + Number(i.subtotal), 0);
+    const itemsTotal = items.reduce((sum: number, i: any) => sum + Number(i.subtotal), 0);
     const orderRepo = manager ? manager.getRepository(Order) : this.orderRepo;
     const order = await orderRepo.findOne({ where: { id: orderId } });
     if (order) {
-      order.totalAmount = total;
+      order.totalAmount = itemsTotal + Number(order.shippingCost || 0);
       await orderRepo.save(order);
     }
   }

@@ -1,12 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import { Repository } from 'typeorm';
 import { Customer } from './entities/customer.entity';
 import { PaginatedResponseDto } from '../common/dto/paginated-response.dto';
 
 @Injectable()
 export class CustomersService {
-  constructor(@InjectRepository(Customer) private repo: Repository<Customer>) {}
+  constructor(@InjectRepository(Customer) private repo: Repository<Customer>, private dataSource: DataSource) {}
 
   async findAll(page = 1, pageSize = 20, filters?: { customer_type?: string; region?: string; is_active?: boolean; keyword?: string }) {
     const qb = this.repo.createQueryBuilder('c');
@@ -59,31 +60,92 @@ export class CustomersService {
 
   async remove(id: number) {
     const c = await this.findOne(id);
+
+    // Check for associated orders
+    const orderCount = await this.dataSource.query(
+      'SELECT COUNT(*) as count FROM orders WHERE customer_id = $1',
+      [id]
+    );
+    if (parseInt(orderCount[0]?.count || '0') > 0) {
+      throw new BadRequestException('该客户有关联的订单，无法删除。请先删除相关订单。');
+    }
+
+    // Check for associated quotations
+    const quotationCount = await this.dataSource.query(
+      'SELECT COUNT(*) as count FROM quotations WHERE customer_id = $1',
+      [id]
+    );
+    if (parseInt(quotationCount[0]?.count || '0') > 0) {
+      throw new BadRequestException('该客户有关联的报价单，无法删除。请先删除相关报价单。');
+    }
+
     await this.repo.remove(c);
   }
 
   async batchUpdate(ids: number[], data: any) {
-    if (!ids.length) return { updated: 0 };
-    const set: any = {};
-    const map: Record<string, string> = {
-      company_name: 'companyName', contact_person: 'contactPerson',
-      phone: 'phone', email: 'email', address: 'address', country: 'country', region: 'region',
-      customer_type: 'customerType', customer_level: 'customerLevel', currency: 'currency',
-      credit_limit: 'creditLimit', payment_terms: 'paymentTerms', notes: 'notes', is_active: 'isActive',
-    };
-    for (const [k, v] of Object.entries(data)) {
-      if (k === 'ids') continue;
-      const key = map[k] || k;
-      if (v !== undefined && v !== '') set[key] = v;
+    const map = { company_name: 'companyName', contact_person: 'contactPerson', customer_type: 'customerType', customer_level: 'customerLevel', credit_limit: 'creditLimit', payment_terms: 'paymentTerms', is_active: 'isActive' };
+    for (const id of ids) {
+      const customer = await this.repo.findOne({ where: { id } });
+      if (!customer) continue;
+      for (const [k, v] of Object.entries(data)) {
+        if (k === 'ids' || v === undefined || v === '') continue;
+        const key = map[k] || k;
+        (customer as any)[key] = v;
+      }
+      await this.repo.save(customer);
     }
-    if (Object.keys(set).length === 0) return { updated: 0 };
-    await this.repo.createQueryBuilder().update().set(set).where('id IN (:...ids)', { ids }).execute();
     return { updated: ids.length };
   }
 
   async batchDelete(ids: number[]) {
     if (!ids.length) return { deleted: 0 };
+
+    // Check for associated data
+    for (const id of ids) {
+      const orderCount = await this.dataSource.query(
+        'SELECT COUNT(*) as count FROM orders WHERE customer_id = $1',
+        [id]
+      );
+      if (parseInt(orderCount[0]?.count || '0') > 0) {
+        throw new BadRequestException(`客户ID ${id} 有关联的订单，无法删除`);
+      }
+
+      const quotationCount = await this.dataSource.query(
+        'SELECT COUNT(*) as count FROM quotations WHERE customer_id = $1',
+        [id]
+      );
+      if (parseInt(quotationCount[0]?.count || '0') > 0) {
+        throw new BadRequestException(`客户ID ${id} 有关联的报价单，无法删除`);
+      }
+    }
+
     await this.repo.delete(ids);
     return { deleted: ids.length };
   }
+
+  async getConfigTypes() {
+    const types = await this.dataSource.query("SELECT value FROM settings WHERE key = 'customer_types'");
+    const levels = await this.dataSource.query("SELECT value FROM settings WHERE key = 'customer_levels'");
+    return {
+      types: types[0]?.value ? JSON.parse(types[0].value) : ['经销商', '修理厂', '终端客户', '贸易商', '电商平台'],
+      levels: levels[0]?.value ? JSON.parse(levels[0].value) : ['普通', 'VIP', '重点', '潜在'],
+    };
+  }
+
+  async updateConfigTypes(data: { types?: string[]; levels?: string[] }) {
+    if (data.types) {
+      await this.dataSource.query(
+        "INSERT INTO settings (key, value) VALUES ('customer_types', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
+        [JSON.stringify(data.types)]
+      );
+    }
+    if (data.levels) {
+      await this.dataSource.query(
+        "INSERT INTO settings (key, value) VALUES ('customer_levels', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
+        [JSON.stringify(data.levels)]
+      );
+    }
+    return { success: true };
+  }
+
 }

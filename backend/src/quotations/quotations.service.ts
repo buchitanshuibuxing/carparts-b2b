@@ -1,16 +1,12 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, DataSource } from 'typeorm';
+import { Repository, DataSource, In } from 'typeorm';
 import { Quotation } from './entities/quotation.entity';
 import { QuotationItem } from './entities/quotation-item.entity';
 import { QuotationTemplate } from './entities/quotation-template.entity';
 import { PaymentAccount } from './entities/payment-account.entity';
 import { Part } from '../parts/entities/part.entity';
 import { Customer } from '../customers/entities/customer.entity';
-import { Order } from '../orders/entities/order.entity';
-import { OrderItem } from '../orders/entities/order-item.entity';
-import { Inventory } from '../inventory/entities/inventory.entity';
-import { InventoryLog } from '../inventory/entities/inventory-log.entity';
 import { PaginatedResponseDto } from '../common/dto/paginated-response.dto';
 
 @Injectable()
@@ -22,27 +18,21 @@ export class QuotationsService {
     @InjectRepository(PaymentAccount) private paymentAccountRepo: Repository<PaymentAccount>,
     @InjectRepository(Part) private partRepo: Repository<Part>,
     @InjectRepository(Customer) private customerRepo: Repository<Customer>,
-    @InjectRepository(Order) private orderRepo: Repository<Order>,
-    @InjectRepository(OrderItem) private orderItemRepo: Repository<OrderItem>,
-    @InjectRepository(Inventory) private invRepo: Repository<Inventory>,
-    @InjectRepository(InventoryLog) private logRepo: Repository<InventoryLog>,
     private dataSource: DataSource,
   ) {}
 
-  // ==================== Templates ====================
-
+  // ---- Templates ----
   async getTemplates() { return this.templateRepo.find({ order: { createdAt: 'DESC' } }); }
   async getTemplate(id: number) { return this.templateRepo.findOne({ where: { id } }); }
   async saveTemplate(data: any) {
-    const t = this.templateRepo.create({
+    return this.templateRepo.save(this.templateRepo.create({
       templateName: data.template_name, headerText: data.header_text || '',
       footerText: data.footer_text || '', termsText: data.terms_text || '',
       currency: data.currency || 'USD', includeImage: data.include_image ?? true,
-    });
-    return this.templateRepo.save(t);
+    }));
   }
   async updateTemplate(id: number, data: any) {
-    const t = await this.templateRepo.findOne({ where: { id } });
+    const t: any = await this.templateRepo.findOne({ where: { id } });
     if (!t) throw new NotFoundException('模板不存在');
     if (data.template_name) t.templateName = data.template_name;
     if (data.header_text !== undefined) t.headerText = data.header_text;
@@ -52,41 +42,48 @@ export class QuotationsService {
   }
   async deleteTemplate(id: number) { await this.templateRepo.delete(id); }
 
-  // ==================== Quotations ====================
+  // ---- Get Next Quotation Number ----
+  async getNextQuotationNumber(data: any) {
+    const today = new Date().toISOString().slice(0, 10);
+    const todayStr = today.replace(/-/g, "");
+    const todayCount = await this.quotationRepo.createQueryBuilder("q")
+      .where("q.created_at >= :startDate", { startDate: today })
+      .getCount();
+    const prefix = data.quote_prefix || "QT";
+    let middle = todayStr;
+    if (data.quote_middle_type === "random") middle = Math.random().toString(36).substring(2, 8).toUpperCase();
+    else if (data.quote_middle_type === "custom" && data.quote_middle_custom) middle = data.quote_middle_custom;
+    const startNum = parseInt(data.quote_suffix_start || "1", 10);
+    const suffix = String(startNum + todayCount).padStart((data.quote_suffix_start || "001").length, "0");
+    const quotationNumber = prefix + middle + suffix;
+    return { quotationNumber };
+  }
 
+  // ---- Generate ----
   async generate(data: any) {
-    if (!data.items?.length) throw new BadRequestException('报价项不能为空');
+    const today = new Date().toISOString().slice(0, 10);
+    const todayStr = today.replace(/-/g, '');
+    const todayCount = await this.quotationRepo.createQueryBuilder("q")
+      .where("q.created_at >= :startDate", { startDate: today })
+      .getCount();
+    const prefix = data.quote_prefix || 'QT';
+    let middle = todayStr;
+    if (data.quote_middle_type === 'random') middle = Math.random().toString(36).substring(2, 8).toUpperCase();
+    else if (data.quote_middle_type === 'custom' && data.quote_middle_custom) middle = data.quote_middle_custom;
+    const startNum = parseInt(data.quote_suffix_start || '1', 10);
+    const suffix = String(startNum + todayCount).padStart((data.quote_suffix_start || '001').length, '0');
+    const quotationNumber = prefix + middle + suffix;
 
-    // Auto-create customer if not provided
-    if (!data.customer_id && data.buyer_company) {
-      data.customer_id = await this.findOrCreateCustomer(data);
-    }
-
-    // Generate quotation number with time: QT-YYYYMMDDHHmm-NNN
-    const now = new Date();
-    const dateStr = now.toISOString().slice(0, 16).replace(/[-:T]/g, '').slice(0, 12);
-    const count = await this.quotationRepo.count();
-    const quotationNumber = `QT-${dateStr}-${String(count + 1).padStart(3, '0')}`;
-
+    const items = data.items || [];
     let totalAmount = 0;
-    const items: any[] = [];
-    for (const item of data.items) {
-      const subtotal = item.quantity * (item.unit_price || 0);
-      totalAmount += subtotal;
-      items.push({
-        partId: item.part_id, oeNumber: item.oe_number || '', partName: item.part_name || '',
-        brand: item.brand || '', packageName: item.package_name || '', unit: item.unit || 'pcs',
-        quantity: item.quantity, unitPrice: item.unit_price || 0, subtotal,
-      });
-    }
-
-    const discountPct = Number(data.discount_pct) || 0;
-    const shippingCost = Number(data.shipping_cost) || 0;
-    const finalTotal = totalAmount * (1 - discountPct / 100) + shippingCost;
+    for (const item of items) totalAmount += (item.quantity || 0) * (item.unit_price || 0);
+    totalAmount += Number(data.shipping_cost) || 0;
 
     const quotation = this.quotationRepo.create({
-      quotationNumber, customerId: data.customer_id || null,
-      currency: data.currency || 'USD', status: 'draft',
+      quotationNumber,
+      templateId: data.template_id || null,
+      customerId: data.customer_id || null,
+      currency: data.currency || 'USD', status: 'draft', totalAmount,
       sellerCompany: data.seller_company || '', sellerContact: data.seller_contact || '',
       sellerPhone: data.seller_phone || '', sellerEmail: data.seller_email || '',
       sellerAddress: data.seller_address || '', logoUrl: data.logo_url || '',
@@ -96,234 +93,250 @@ export class QuotationsService {
       tradeTerms: data.trade_terms || '', portLoading: data.port_loading || '',
       portDest: data.port_dest || '', deliveryTime: data.delivery_time || '',
       validUntil: data.valid_until || null,
-      discountPct, shippingCost, totalAmount: finalTotal,
+      discountPct: data.discount_pct || 0, shippingCost: data.shipping_cost || 0,
       paymentStages: data.payment_stages || [],
       paymentAccountId: data.payment_account_id || null,
       notes: data.notes || '', remark: data.remark || '',
+      headerText: data.header_text || '', footerText: data.footer_text || '',
     });
+    // Validate foreign keys
+    if (data.template_id) {
+      const tpl = await this.templateRepo.findOne({ where: { id: data.template_id } });
+      if (!tpl) (quotation as any).templateId = null;
+    }
+    if (data.customer_id) {
+      const cust = await this.dataSource.query('SELECT id FROM customers WHERE id = $1', [data.customer_id]);
+      if (!cust.length) (quotation as any).customerId = null;
+    }
     const saved = await this.quotationRepo.save(quotation);
 
     for (const item of items) {
-      await this.itemRepo.save({ ...item, quotationId: saved.id });
+      const subtotal = (item.quantity || 0) * (item.unit_price || 0);
+      await this.itemRepo.save({
+        quotationId: saved.id, partId: item.part_id,
+        oeNumber: item.oe_number || '', partName: item.part_name || '',
+        quantity: item.quantity, unitPrice: item.unit_price || 0, subtotal,
+        brand: item.brand || '', packageName: item.package_name || '', unit: item.unit || 'pcs',
+      });
     }
-
     return this.findOne(saved.id);
   }
 
-  async findAll(page = 1, pageSize = 20, filters?: { status?: string; customer_id?: number; keyword?: string; date_from?: string; date_to?: string }) {
+  // ---- CRUD ----
+  async findAll(page = 1, pageSize = 20, filters?: { status?: string; customer_id?: number; keyword?: string }) {
     const qb = this.quotationRepo.createQueryBuilder('q');
     if (filters?.status) qb.andWhere('q.status = :s', { s: filters.status });
     if (filters?.customer_id) qb.andWhere('q.customer_id = :c', { c: filters.customer_id });
-    if (filters?.date_from) qb.andWhere('q.created_at >= :df', { df: filters.date_from });
-    if (filters?.date_to) qb.andWhere('q.created_at <= :dt', { dt: filters.date_to });
-    if (filters?.keyword) {
-      qb.andWhere('(q.quotation_number ILIKE :kw OR q.buyer_company ILIKE :kw OR q.notes ILIKE :kw OR q.remark ILIKE :kw)', { kw: `%${filters.keyword}%` });
-    }
+    if (filters?.keyword) qb.andWhere('(q.quotation_number ILIKE :kw OR q.buyer_company ILIKE :kw)', { kw: '%' + filters.keyword + '%' });
     qb.orderBy('q.created_at', 'DESC').skip((page - 1) * pageSize).take(pageSize);
     const [items, total] = await qb.getManyAndCount();
-    return new PaginatedResponseDto(items, total, page, pageSize);
+    const custIds = [...new Set(items.map((q: any) => q.customerId).filter(Boolean))];
+    const custMap = new Map();
+    if (custIds.length) {
+      const customers = await this.customerRepo.find({ where: { id: In(custIds) } });
+      customers.forEach(c => custMap.set(c.id, c.companyName));
+    }
+    const enriched = items.map((q: any) => ({ ...q, customerName: custMap.get(q.customerId) || '' }));
+    return new PaginatedResponseDto(enriched, total, page, pageSize);
   }
 
   async findOne(id: number) {
-    const q = await this.quotationRepo.findOne({ where: { id } });
+    const q: any = await this.quotationRepo.findOne({ where: { id } });
     if (!q) throw new NotFoundException('报价单不存在');
     const items = await this.itemRepo.find({ where: { quotationId: id } });
-    const partIds = [...new Set(items.map(i => i.partId).filter(Boolean))];
-    const parts = partIds.length ? await this.partRepo.find({ where: { id: In(partIds) } }) : [];
-    const partMap = new Map(parts.map(p => [p.id, p]));
-    const itemsWithParts = items.map(item => ({
-      ...item,
-      part: partMap.get(item.partId) || null,
-    }));
-    // Load payment account if set
+    let customerName = '';
+    if (q.customerId) {
+      const cust = await this.customerRepo.findOne({ where: { id: q.customerId } });
+      if (cust) customerName = cust.companyName;
+    }
     let paymentAccount: PaymentAccount | null = null;
     if (q.paymentAccountId) {
       paymentAccount = await this.paymentAccountRepo.findOne({ where: { id: q.paymentAccountId } });
     }
-    return { quotation: q, items: itemsWithParts, paymentAccount };
+    return { quotation: { ...q, customerName }, items, paymentAccount };
   }
 
-  async update(id: number, data: any) {
-    const q = await this.quotationRepo.findOne({ where: { id } });
+  async updateQuotation(id: number, data: any) {
+    const q: any = await this.quotationRepo.findOne({ where: { id } });
     if (!q) throw new NotFoundException('报价单不存在');
-
-    // Map snake_case fields to camelCase
-    const fieldMap: Record<string, string> = {
+    const map: any = {
       seller_company: 'sellerCompany', seller_contact: 'sellerContact',
       seller_phone: 'sellerPhone', seller_email: 'sellerEmail', seller_address: 'sellerAddress',
-      logo_url: 'logoUrl',
       buyer_company: 'buyerCompany', buyer_contact: 'buyerContact',
       buyer_phone: 'buyerPhone', buyer_email: 'buyerEmail', buyer_address: 'buyerAddress',
+      header_text: 'headerText', footer_text: 'footerText', logo_url: 'logoUrl',
       trade_terms: 'tradeTerms', port_loading: 'portLoading', port_dest: 'portDest',
       delivery_time: 'deliveryTime', valid_until: 'validUntil',
       discount_pct: 'discountPct', shipping_cost: 'shippingCost',
       payment_stages: 'paymentStages', payment_account_id: 'paymentAccountId',
-      customer_id: 'customerId',
     };
     for (const [k, v] of Object.entries(data)) {
-      if (k === 'items') continue;
-      const key = fieldMap[k] || k;
+      const key = map[k] || k;
       if (v !== undefined) (q as any)[key] = v;
     }
-
-    // Replace items if provided
-    if (data.items) {
-      await this.itemRepo.delete({ quotationId: id });
-      let totalAmount = 0;
-      for (const item of data.items) {
-        const subtotal = item.quantity * (item.unit_price || 0);
-        totalAmount += subtotal;
-        await this.itemRepo.save({
-          quotationId: id, partId: item.part_id,
-          oeNumber: item.oe_number || '', partName: item.part_name || '',
-          brand: item.brand || '', packageName: item.package_name || '', unit: item.unit || 'pcs',
-          quantity: item.quantity, unitPrice: item.unit_price || 0, subtotal,
-        });
+    // Recalculate totalAmount if items or shipping_cost changed
+    if (data.items || data.shipping_cost !== undefined) {
+      let subtotal = 0;
+      if (data.items) {
+        for (const item of data.items) {
+          subtotal += (item.quantity || 0) * (item.unit_price || 0);
+        }
+      } else {
+        // Use existing items
+        const existingItems = await this.itemRepo.find({ where: { quotationId: id } });
+        for (const item of existingItems) {
+          subtotal += Number(item.subtotal) || 0;
+        }
       }
-      const discountPct = Number(data.discount_pct ?? q.discountPct) || 0;
-      const shippingCost = Number(data.shipping_cost ?? q.shippingCost) || 0;
-      q.totalAmount = totalAmount * (1 - discountPct / 100) + shippingCost;
+      q.totalAmount = subtotal + (Number(q.shippingCost) || 0);
     }
-
-    await this.quotationRepo.save(q);
-    return this.findOne(id);
+    return this.quotationRepo.save(q);
   }
 
-  async delete(id: number) {
-    const q = await this.quotationRepo.findOne({ where: { id } });
-    if (!q) throw new NotFoundException('报价单不存在');
-    await this.itemRepo.delete({ quotationId: id });
-    await this.quotationRepo.remove(q);
+  async deleteQuotation(id: number) {
+    await this.itemRepo.delete({ quotationId: id } as any);
+    await this.quotationRepo.delete(id);
     return { deleted: true };
   }
 
   async updateStatus(id: number, status: string) {
-    const q = await this.quotationRepo.findOne({ where: { id } });
+    const q: any = await this.quotationRepo.findOne({ where: { id } });
     if (!q) throw new NotFoundException('报价单不存在');
     q.status = status;
     return this.quotationRepo.save(q);
   }
 
   async convertToOrder(quotationId: number, userId?: number) {
-    const { quotation, items } = await this.findOne(quotationId);
+    const quotation: any = await this.quotationRepo.findOne({ where: { id: quotationId } });
     if (!quotation) throw new NotFoundException('报价单不存在');
-    if (quotation.status !== 'accepted') throw new BadRequestException('只能转换已接受的报价单');
-    if (!items.length) throw new BadRequestException('报价单没有商品项');
-
-    return this.dataSource.transaction(async (manager) => {
-      const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      const count = await manager.count(Order);
-      const orderNumber = `ORD${today}${String(count + 1).padStart(4, '0')}`;
-
-      const order = manager.create(Order, {
-        orderNumber, customerId: quotation.customerId,
-        currency: quotation.currency, status: 'pending',
-        shippingMethod: '', shippingAddress: quotation.buyerAddress || '',
-        notes: `从报价单 ${quotation.quotationNumber} 转换`, createdBy: userId,
-      });
-      const savedOrder = await manager.save(order);
-
-      let totalAmount = 0;
-      for (const item of items) {
-        const subtotal = Number(item.quantity) * Number(item.unitPrice);
-        totalAmount += subtotal;
-        await manager.save(OrderItem, {
-          orderId: savedOrder.id, partId: item.partId,
-          quantity: item.quantity, unitPrice: item.unitPrice,
-          discountPct: 0, subtotal,
-        });
-        // Deduct inventory
-        let inv = await manager.findOne(Inventory, { where: { partId: item.partId }, lock: { mode: 'pessimistic_write' } });
-        if (!inv) {
-          inv = manager.create(Inventory, { partId: item.partId, quantity: 0, reservedQuantity: 0 });
-        }
-        const before = inv.quantity;
-        inv.quantity -= Number(item.quantity);
-        inv.reservedQuantity += Number(item.quantity);
-        await manager.save(inv);
-        await manager.save(InventoryLog, {
-          partId: item.partId, changeType: 'OUT', quantityChange: Number(item.quantity),
-          quantityBefore: before, quantityAfter: inv.quantity,
-          reason: `报价单 ${quotation.quotationNumber} 转订单`, referenceType: 'order', referenceId: savedOrder.id, operatorId: userId,
-        });
+    const items = await this.itemRepo.find({ where: { quotationId } });
+    if (!items.length) throw new BadRequestException('报价单没有商品');
+    
+    // Auto-create customer if buyer_company exists but customer_id is null
+    let customerId = quotation.customerId;
+    if (!customerId && quotation.buyerCompany) {
+      const existing = await this.dataSource.query('SELECT id FROM customers WHERE company_name = $1 LIMIT 1', [quotation.buyerCompany]);
+      if (existing.length) {
+        customerId = existing[0].id;
+      } else {
+        const newCust = await this.dataSource.query(
+          'INSERT INTO customers (company_name, contact_person, phone, email, address, customer_type, is_active) VALUES ($1,$2,$3,$4,$5,$6,true) RETURNING id',
+          [quotation.buyerCompany, quotation.buyerContact || '', quotation.buyerPhone || '', quotation.buyerEmail || '', quotation.buyerAddress || '', 'wholesale']
+        );
+        customerId = newCust[0].id;
       }
+      // Update quotation with customer_id
+      await this.quotationRepo.createQueryBuilder().update().set({ customerId }).where('id = :id', { id: quotationId }).execute();
+    }
+    
+    const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const count = await this.dataSource.query('SELECT count(*) as c FROM orders');
+    const orderNumber = 'ORD' + today + String((count[0]?.c || 0) + 1).padStart(4, '0');
 
-      savedOrder.totalAmount = totalAmount;
-      await manager.save(savedOrder);
-      return { order: savedOrder };
-    });
+    const shippingCost = Number(quotation.shippingCost) || 0;
+    // totalAmount already includes shipping, don't add again
+    const result = await this.dataSource.query(
+      'INSERT INTO orders (order_number, quotation_number, customer_id, currency, status, total_amount, shipping_cost, shipping_address, notes, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *',
+      [orderNumber, quotation.quotationNumber, customerId || null, quotation.currency || 'USD', 'pending', quotation.totalAmount, shippingCost, quotation.buyerAddress || '', '从报价单 ' + quotation.quotationNumber + ' 转换', userId || null]
+    );
+    const order = result[0];
+    for (const item of items) {
+      await this.dataSource.query(
+        'INSERT INTO order_items (order_id, part_id, quantity, unit_price, discount_pct, subtotal, package_name) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+        [order.id, item.partId, item.quantity, item.unitPrice, 0, item.subtotal, item.packageName || null]
+      );
+    }
+    // Update quotation status
+    await this.quotationRepo.createQueryBuilder().update().set({ status: 'converted' }).where('id = :id', { id: quotationId }).execute();
+    return { order, message: '报价单已转为订单 ' + orderNumber };
   }
 
-  // ==================== Payment Accounts ====================
+  // ---- Batch Operations ----
+  async batchDelete(ids: number[]) {
+    if (!ids.length) return { deleted: 0 };
+    await this.dataSource.query('DELETE FROM quotation_items WHERE quotation_id = ANY($1)', [ids]);
+    await this.dataSource.query('DELETE FROM quotations WHERE id = ANY($1)', [ids]);
+    return { deleted: ids.length };
+  }
 
+  async batchStatus(ids: number[], status: string) {
+    for (const id of ids) {
+      const q: any = await this.quotationRepo.findOne({ where: { id } });
+      if (q) { q.status = status; await this.quotationRepo.save(q); }
+    }
+    return { updated: ids.length };
+  }
+
+  // ---- Payment Accounts ----
   async getPaymentAccounts() {
-    return this.paymentAccountRepo.find({ order: { isDefault: 'DESC', createdAt: 'DESC' } });
+    const rows = await this.dataSource.query('SELECT * FROM payment_accounts ORDER BY is_default DESC, created_at DESC');
+    return rows.map((r: any) => ({
+      id: r.id,
+      accountName: r.account_name,
+      beneficiaryName: r.beneficiary_name,
+      bankName: r.bank_name,
+      bankAddress: r.bank_address,
+      swiftCode: r.swift_code,
+      accountNumber: r.account_number,
+      accountType: r.account_type,
+      bankCode: r.bank_code,
+      branchCode: r.branch_code,
+      currency: r.currency,
+      remark: r.remark,
+      isDefault: r.is_default,
+      createdAt: r.created_at,
+    }));
   }
-
   async getPaymentAccount(id: number) {
-    return this.paymentAccountRepo.findOne({ where: { id } });
+    const rows = await this.dataSource.query('SELECT * FROM payment_accounts WHERE id = $1', [id]);
+    if (!rows[0]) return null;
+    const r = rows[0];
+    return {
+      id: r.id,
+      accountName: r.account_name,
+      beneficiaryName: r.beneficiary_name,
+      bankName: r.bank_name,
+      bankAddress: r.bank_address,
+      swiftCode: r.swift_code,
+      accountNumber: r.account_number,
+      accountType: r.account_type,
+      bankCode: r.bank_code,
+      branchCode: r.branch_code,
+      currency: r.currency,
+      remark: r.remark,
+      isDefault: r.is_default,
+      createdAt: r.created_at,
+    };
   }
-
   async createPaymentAccount(data: any) {
-    const pa = this.paymentAccountRepo.create({
-      accountName: data.account_name, beneficiaryName: data.beneficiary_name || '',
-      bankName: data.bank_name || '', bankAddress: data.bank_address || '',
-      swiftCode: data.swift_code || '', accountNumber: data.account_number || '',
-      currency: data.currency || 'USD', remark: data.remark || '',
-      isDefault: data.is_default ?? false,
-    });
-    if (pa.isDefault) {
-      await this.paymentAccountRepo.update({ isDefault: true }, { isDefault: false });
-    }
-    return this.paymentAccountRepo.save(pa);
+    const result = await this.dataSource.query(
+      'INSERT INTO payment_accounts (account_name, beneficiary_name, bank_name, bank_address, swift_code, account_number, account_type, bank_code, branch_code, currency, remark, is_default) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *',
+      [data.account_name || '', data.beneficiary_name || '', data.bank_name || '', data.bank_address || '', data.swift_code || '', data.account_number || '', data.account_type || '', data.bank_code || '', data.branch_code || '', data.currency || 'USD', data.remark || '', data.is_default || false]
+    );
+    if (data.is_default) await this.dataSource.query('UPDATE payment_accounts SET is_default = false WHERE id != $1', [result[0]?.id]);
+    const r = result[0];
+    return {
+      id: r.id, accountName: r.account_name, beneficiaryName: r.beneficiary_name,
+      bankName: r.bank_name, bankAddress: r.bank_address, swiftCode: r.swift_code,
+      accountNumber: r.account_number, accountType: r.account_type, bankCode: r.bank_code,
+      branchCode: r.branch_code, currency: r.currency, remark: r.remark,
+      isDefault: r.is_default, createdAt: r.created_at,
+    };
   }
-
   async updatePaymentAccount(id: number, data: any) {
-    const pa = await this.paymentAccountRepo.findOne({ where: { id } });
-    if (!pa) throw new NotFoundException('付款账户不存在');
-    if (data.account_name !== undefined) pa.accountName = data.account_name;
-    if (data.beneficiary_name !== undefined) pa.beneficiaryName = data.beneficiary_name;
-    if (data.bank_name !== undefined) pa.bankName = data.bank_name;
-    if (data.bank_address !== undefined) pa.bankAddress = data.bank_address;
-    if (data.swift_code !== undefined) pa.swiftCode = data.swift_code;
-    if (data.account_number !== undefined) pa.accountNumber = data.account_number;
-    if (data.currency !== undefined) pa.currency = data.currency;
-    if (data.remark !== undefined) pa.remark = data.remark;
-    if (data.is_default !== undefined) pa.isDefault = data.is_default;
-    if (pa.isDefault) {
-      await this.paymentAccountRepo.update({ id: In([id]), isDefault: false }, { isDefault: false });
-      await this.paymentAccountRepo.update({ isDefault: true }, { isDefault: false });
+    const fields = ['account_name', 'beneficiary_name', 'bank_name', 'bank_address', 'swift_code', 'account_number', 'account_type', 'bank_code', 'branch_code', 'currency', 'remark', 'is_default'];
+    const updates: string[] = []; const values: any[] = []; let idx = 1;
+    for (const f of fields) {
+      if (data[f] !== undefined) { updates.push(f + ' = $' + idx); values.push(data[f]); idx++; }
     }
-    return this.paymentAccountRepo.save(pa);
+    if (updates.length) { values.push(id); await this.dataSource.query('UPDATE payment_accounts SET ' + updates.join(', ') + ' WHERE id = $' + idx, values); }
+    if (data.is_default) await this.dataSource.query('UPDATE payment_accounts SET is_default = false WHERE id != $1', [id]);
+    return this.getPaymentAccount(id);
   }
-
   async deletePaymentAccount(id: number) {
-    await this.paymentAccountRepo.delete(id);
+    // Clear references in quotations first
+    await this.dataSource.query('UPDATE quotations SET payment_account_id = NULL WHERE payment_account_id = $1', [id]);
+    await this.dataSource.query('DELETE FROM payment_accounts WHERE id = $1', [id]);
     return { deleted: true };
-  }
-
-  // ==================== Helpers ====================
-
-  private async findOrCreateCustomer(buyerData: any): Promise<number> {
-    const companyName = buyerData.buyer_company;
-    if (!companyName) throw new BadRequestException('买方公司名称不能为空');
-
-    // Try to find existing customer by company name
-    const existing = await this.customerRepo.findOne({ where: { companyName } });
-    if (existing) return existing.id;
-
-    // Auto-generate customer code
-    const count = await this.customerRepo.count();
-    const customerCode = `C${String(count + 1).padStart(5, '0')}`;
-
-    const customer = this.customerRepo.create({
-      customerCode, companyName,
-      contactPerson: buyerData.buyer_contact || '',
-      phone: buyerData.buyer_phone || '',
-      email: buyerData.buyer_email || '',
-      address: buyerData.buyer_address || '',
-    });
-    const saved = await this.customerRepo.save(customer);
-    return saved.id;
   }
 }

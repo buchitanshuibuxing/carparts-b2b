@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { DataSource } from 'typeorm';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { FacebookService } from './facebook.service';
 import { FacebookController } from './facebook.controller';

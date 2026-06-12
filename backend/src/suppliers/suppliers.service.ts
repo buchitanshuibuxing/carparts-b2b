@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Supplier } from './entities/supplier.entity';
@@ -44,7 +44,7 @@ export class SuppliersService {
     const supplier = await this.findOne(id);
     const map: Record<string, string> = {
       supplier_code: 'supplierCode', company_name: 'companyName', contact_person: 'contactPerson',
-      payment_terms: 'paymentTerms', lead_time_days: 'leadTimeDays', is_active: 'isActive',
+      payment_terms: 'paymentTerms', lead_time_days: 'leadTimeDays', is_active: 'isActive', main_products: 'mainProducts',
     };
     for (const [k, v] of Object.entries(data)) {
       const key = map[k] || k;
@@ -73,30 +73,42 @@ export class SuppliersService {
 
   async remove(id: number) {
     const supplier = await this.findOne(id);
+
+    // Check for associated supplier_parts
+    const partCount = await this.supplierPartRepo.count({ where: { supplierId: id } });
+    if (partCount > 0) {
+      throw new BadRequestException('该供应商有关联的配件，无法删除。请先删除相关配件。');
+    }
+
     await this.supplierRepo.remove(supplier);
   }
 
   async batchUpdate(ids: number[], data: any) {
-    if (!ids.length) return { updated: 0 };
-    const set: any = {};
-    const map: Record<string, string> = {
-      supplier_code: 'supplierCode', company_name: 'companyName', contact_person: 'contactPerson',
-      phone: 'phone', email: 'email', address: 'address', country: 'country',
-      main_products: 'mainProducts', payment_terms: 'paymentTerms', currency: 'currency',
-      lead_time_days: 'leadTimeDays', rating: 'rating', is_active: 'isActive', notes: 'notes',
-    };
-    for (const [k, v] of Object.entries(data)) {
-      if (k === 'ids') continue;
-      const key = map[k] || k;
-      if (v !== undefined && v !== '') set[key] = v;
+    const map = { company_name: 'companyName', contact_person: 'contactPerson', payment_terms: 'paymentTerms', lead_time_days: 'leadTimeDays', is_active: 'isActive', main_products: 'mainProducts' };
+    for (const id of ids) {
+      const supplier = await this.supplierRepo.findOne({ where: { id } });
+      if (!supplier) continue;
+      for (const [k, v] of Object.entries(data)) {
+        if (k === 'ids' || v === undefined || v === '') continue;
+        const key = map[k] || k;
+        (supplier as any)[key] = v;
+      }
+      await this.supplierRepo.save(supplier);
     }
-    if (Object.keys(set).length === 0) return { updated: 0 };
-    await this.supplierRepo.createQueryBuilder().update().set(set).where('id IN (:...ids)', { ids }).execute();
     return { updated: ids.length };
   }
 
   async batchDelete(ids: number[]) {
     if (!ids.length) return { deleted: 0 };
+
+    // Check for associated data
+    for (const id of ids) {
+      const partCount = await this.supplierPartRepo.count({ where: { supplierId: id } });
+      if (partCount > 0) {
+        throw new BadRequestException(`供应商ID ${id} 有关联的配件，无法删除`);
+      }
+    }
+
     await this.supplierRepo.delete(ids);
     return { deleted: ids.length };
   }

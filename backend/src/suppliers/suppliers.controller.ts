@@ -1,9 +1,11 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { SuppliersService } from './suppliers.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { RequirePermission, PermissionsGuard } from '../common/guards/permissions.guard';
+
 
 @Controller('suppliers')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class SuppliersController {
   constructor(private svc: SuppliersService) {}
 
@@ -17,6 +19,7 @@ export class SuppliersController {
   @Put(':id/toggle') toggle(@Param('id') id: number, @Body() body: { is_active: boolean }) { return this.svc.toggleActive(id, body.is_active); }
   @Post('link-part') linkPart(@Body() body: any) { return this.svc.linkPart(body); }
   @Delete(':id') remove(@Param('id') id: number) { return this.svc.remove(id); }
+  @RequirePermission('suppliers', 'delete')
 
   @Post('batch-update')
   batchUpdate(@Body() body: { ids: number[] } & Record<string, any>) {

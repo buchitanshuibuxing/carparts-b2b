@@ -1,36 +1,30 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { PricesService } from './prices.service';
-import { SettingsService } from '../settings/settings.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { RequirePermission, PermissionsGuard } from '../common/guards/permissions.guard';
 
-const DEFAULT_PRICE_TYPES = ['批发价', '零售价', '促销价', '成本价', 'VIP价'];
-const DEFAULT_CURRENCIES = ['USD', 'EUR', 'CNY', 'GBP', 'JPY', 'KRW'];
 
 @Controller('prices')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class PricesController {
-  constructor(private svc: PricesService, private settingsSvc: SettingsService) {}
+  constructor(private svc: PricesService) {}
 
   @Get()
-  findAll(@Query('page') page: number = 1, @Query('limit') limit: number = 20, @Query('keyword') kw?: string, @Query('price_type') pt?: string) {
-    return this.svc.findAll(page, limit, { keyword: kw, price_type: pt });
+  @RequirePermission('prices', 'view')
+  findAll(
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 100,
+    @Query('keyword') keyword?: string,
+    @Query('price_type') priceType?: string,
+  ) {
+    return this.svc.findAll(page, limit, { keyword, price_type: priceType });
   }
 
   @Get('part/:partId') findByPart(@Param('partId') partId: number) { return this.svc.findByPart(partId); }
   @Get('history/:partId') getHistory(@Param('partId') partId: number) { return this.svc.getHistory(partId); }
   @Post('set') setPrice(@Body() body: any) { return this.svc.setPrice(body); }
-  @Put(':id') updateOne(@Param('id') id: number, @Body() body: any) { return this.svc.updateOne(id, body); }
   @Delete(':id') deletePrice(@Param('id') id: number) { return this.svc.deletePrice(id); }
-
-  @Post('batch-update')
-  batchUpdate(@Body() body: { ids: number[] } & Record<string, any>) {
-    return this.svc.batchUpdate(body.ids, body);
-  }
-
-  @Post('batch-delete')
-  batchDelete(@Body() body: { ids: number[] }) {
-    return this.svc.batchDelete(body.ids);
-  }
+  @RequirePermission('prices', 'delete')
 
   @Post('sync')
   syncFromParts() {
@@ -38,18 +32,12 @@ export class PricesController {
   }
 
   @Get('config/types')
-  async getTypes() {
-    const settings = await this.settingsSvc.getAll();
-    return {
-      types: settings.price_types ? JSON.parse(settings.price_types) : DEFAULT_PRICE_TYPES,
-      currencies: settings.currencies ? JSON.parse(settings.currencies) : DEFAULT_CURRENCIES,
-    };
+  getConfigTypes() {
+    return this.svc.getConfigTypes();
   }
 
   @Put('config/types')
-  async updateTypes(@Body() body: { types?: string[]; currencies?: string[] }) {
-    if (body.types) await this.settingsSvc.update('price_types', JSON.stringify(body.types));
-    if (body.currencies) await this.settingsSvc.update('currencies', JSON.stringify(body.currencies));
-    return { success: true };
+  updateConfigTypes(@Body() body: { types?: string[]; currencies?: string[] }) {
+    return this.svc.updateConfigTypes(body);
   }
 }

@@ -28,4 +28,11 @@ export class FacebookController {
   @Post('generate-post') generatePost(@Body() body: any) {
     return this.svc.generatePost(body);
   }
+
+  // Translation
+  @Post('translate')
+  translate(@Body() body: { text: string; target_lang?: string }) {
+    return this.svc.translateText(body.text, body.target_lang || 'zh');
+  }
+
 }

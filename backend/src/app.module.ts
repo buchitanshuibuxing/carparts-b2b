@@ -18,9 +18,12 @@ import { FacebookModule } from './facebook/facebook.module';
 import { ImportExportModule } from './import-export/import-export.module';
 import { SettingsModule } from './settings/settings.module';
 import { DatabaseModule } from './database/database.module';
+import { CommonModule } from './common/common.module';
+import { PermissionsGuard } from './common/guards/permissions.guard';
 
 @Module({
   imports: [
+    CommonModule,
     ConfigModule.forRoot({ isGlobal: true }),
     TypeOrmModule.forRoot({
       type: 'postgres',
@@ -31,12 +34,7 @@ import { DatabaseModule } from './database/database.module';
       database: process.env.DB_NAME || 'carparts',
       entities: [__dirname + '/**/*.entity{.ts,.js}'],
       synchronize: false,
-      logging: false,
-      extra: {
-        max: 20,
-        idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 5000,
-      },
+      logging: process.env.NODE_ENV !== 'production',
     }),
     ScheduleModule.forRoot(),
     ServeStaticModule.forRoot({

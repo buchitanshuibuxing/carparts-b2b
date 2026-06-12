@@ -18,13 +18,6 @@ export class Part {
   @Column({ name: 'part_name_ko', default: '' })
   partNameKo: string;
 
-  @Column({ name: 'classification_id', nullable: true })
-  classificationId: number;
-
-  @ManyToOne(() => PartClassification, { nullable: true, onDelete: 'SET NULL' })
-  @JoinColumn({ name: 'classification_id' })
-  classification: PartClassification;
-
   @Column({ default: '其他' })
   category: string;
 
@@ -75,6 +68,13 @@ export class Part {
 
   @Column({ name: 'updated_by', nullable: true })
   updatedBy: number;
+
+  @Column({ name: 'classification_id', nullable: true })
+  classificationId: number;
+
+  @ManyToOne(() => PartClassification, { nullable: true, createForeignKeyConstraints: false })
+  @JoinColumn({ name: 'classification_id' })
+  classification: PartClassification;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
