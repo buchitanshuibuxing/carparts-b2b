@@ -90,7 +90,20 @@ carparts/
 ### 一键部署（推荐）
 
 ```bash
-curl -sSL https://your-server.com/carparts/install.sh | bash
+# 下载安装脚本
+curl -sSL https://raw.githubusercontent.com/buchitanshuibuxing/carparts-b2b/main/deploy/install.sh -o install.sh
+
+# 添加执行权限
+chmod +x install.sh
+
+# 运行安装
+./install.sh
+```
+
+安装完成后，使用 `carparts` 命令管理服务：
+
+```bash
+carparts  # 打开管理面板
 ```
 
 ### 手动部署

@@ -59,6 +59,10 @@ dist.bak/
 *.key
 *.crt
 
+# Backup files
+*.backup
+*.bak
+
 # Project specific
 conversation-*.txt
 *.zip
