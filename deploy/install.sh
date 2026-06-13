@@ -251,13 +251,20 @@ setup_database() {
         PGPASSWORD="$DB_PASSWORD" psql -h localhost -U "$DB_USER" -d "$DB_NAME" -f "$CARPARTS_DIR/backend/src/database/migrations/001_initial_schema.sql" 2>/dev/null || true
     fi
 
-    # 创建管理员账户
-    ADMIN_HASH=$(node -e "const bcrypt = require('bcrypt'); console.log(bcrypt.hashSync('$ADMIN_PASSWORD', 10))")
-    PGPASSWORD="$DB_PASSWORD" psql -h localhost -U "$DB_USER" -d "$DB_NAME" -c "
-        INSERT INTO users (username, email, password_hash, display_name, role, is_active)
-        VALUES ('admin', 'admin@example.com', '$ADMIN_HASH', '管理员', 'admin', true)
-        ON CONFLICT (username) DO UPDATE SET password_hash = '$ADMIN_HASH';
-    " 2>/dev/null || true
+    # 创建管理员账户（在后端目录执行，因为需要bcrypt模块）
+    cd "$CARPARTS_DIR/backend"
+    ADMIN_HASH=$(node -e "const bcrypt = require('bcrypt'); console.log(bcrypt.hashSync('$ADMIN_PASSWORD', 10))" 2>/dev/null || echo "")
+
+    if [ -z "$ADMIN_HASH" ]; then
+        echo -e "${YELLOW}警告: 无法生成密码哈希，跳过创建管理员账户${NC}"
+        echo -e "${YELLOW}请在后端安装依赖后手动创建管理员账户${NC}"
+    else
+        PGPASSWORD="$DB_PASSWORD" psql -h localhost -U "$DB_USER" -d "$DB_NAME" -c "
+            INSERT INTO users (username, email, password_hash, display_name, role, is_active)
+            VALUES ('admin', 'admin@example.com', '$ADMIN_HASH', '管理员', 'admin', true)
+            ON CONFLICT (username) DO UPDATE SET password_hash = '$ADMIN_HASH';
+        " 2>/dev/null || true
+    fi
 
     # 初始化角色权限
     PGPASSWORD="$DB_PASSWORD" psql -h localhost -U "$DB_USER" -d "$DB_NAME" -c "
@@ -332,8 +339,8 @@ MAX_FILE_SIZE=10485760
 ALLOWED_ORIGINS=https://$DOMAIN
 EOF
 
-    # 安装依赖
-    npm install --production
+    # 安装依赖（包含bcrypt用于密码哈希）
+    npm install
 
     # 构建
     npm run build
@@ -584,8 +591,8 @@ main() {
     install_nginx
     install_pm2
     download_project
-    setup_database
-    setup_backend
+    setup_backend        # 先安装后端依赖
+    setup_database       # 再配置数据库（需要bcrypt模块）
     setup_frontend_nginx
     setup_ssl
     install_command
