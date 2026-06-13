@@ -16,7 +16,7 @@ NC='\033[0m'
 # 项目配置
 CARPARTS_DIR="/opt/carparts"
 GITHUB_REPO="https://github.com/buchitanshuibuxing/carparts-b2b.git"
-NODE_VERSION="18"
+NODE_VERSION="20"
 DB_NAME="carparts"
 DB_USER="carparts"
 
@@ -248,8 +248,13 @@ setup_database() {
 
     # 导入表结构
     if [ -f "$CARPARTS_DIR/backend/src/database/migrations/001_initial_schema.sql" ]; then
-        PGPASSWORD="$DB_PASSWORD" psql -h localhost -U "$DB_USER" -d "$DB_NAME" -f "$CARPARTS_DIR/backend/src/database/migrations/001_initial_schema.sql" 2>/dev/null || true
+        PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U "$DB_USER" -d "$DB_NAME" -f "$CARPARTS_DIR/backend/src/database/migrations/001_initial_schema.sql" 2>/dev/null || true
     fi
+
+    # 添加缺少的字段
+    PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U "$DB_USER" -d "$DB_NAME" -c "
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS department VARCHAR(100) DEFAULT '';
+    " 2>/dev/null || true
 
     # 创建管理员账户（在后端目录执行，因为需要bcrypt模块）
     cd "$CARPARTS_DIR/backend"
@@ -341,6 +346,9 @@ EOF
 
     # 安装依赖（包含bcrypt用于密码哈希）
     npm install
+
+    # 降级webdav（ESM兼容性问题）
+    npm install webdav@4.11.3
 
     # 构建
     npm run build
