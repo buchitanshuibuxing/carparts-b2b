@@ -133,9 +133,12 @@ export class SystemService {
   // 服务管理 - 获取日志
   getLogs(type: 'out' | 'error' | 'all', lines: number = 50): any[] {
     try {
+      // 从环境变量获取日志路径，或使用 PM2 默认路径
+      const pm2LogDir = process.env.PM2_LOG_DIR || `${os.homedir()}/.pm2/logs`;
+      const appName = process.env.PM2_APP_NAME || 'carparts-api';
       const logFile = type === 'error'
-        ? '/home/zfb/.pm2/logs/carparts-api-error.log'
-        : '/home/zfb/.pm2/logs/carparts-api-out.log';
+        ? `${pm2LogDir}/${appName}-error.log`
+        : `${pm2LogDir}/${appName}-out.log`;
 
       if (!fs.existsSync(logFile)) return [{ raw: '日志文件不存在' }];
 

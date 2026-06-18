@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException } from "@nestjs/common";
+import { Injectable, UnauthorizedException, ConflictException, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { JwtService } from "@nestjs/jwt";
@@ -8,6 +8,7 @@ import { LoginLog } from "../users/entities/login-log.entity";
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger('AuthService');
   // 速率限制：5分钟内最多5次尝试
   private loginAttempts = new Map<string, { count: number; firstAttempt: number }>();
   private readonly MAX_ATTEMPTS = 5;
@@ -52,7 +53,9 @@ export class AuthService {
     if (!user) {
       try {
         await this.loginLogRepo.save({ username: username, status: "failed", ipAddress: "" });
-      } catch {}
+      } catch (err) {
+        this.logger.warn('Failed to save login log:', err.message);
+      }
       throw new UnauthorizedException("用户名或密码错误");
     }
     if (!user.isActive) {
@@ -62,7 +65,9 @@ export class AuthService {
     if (!passwordValid) {
       try {
         await this.loginLogRepo.save({ userId: user.id, username: user.username, status: "failed", ipAddress: "" });
-      } catch {}
+      } catch (err) {
+        this.logger.warn('Failed to save login log:', err.message);
+      }
       throw new UnauthorizedException("用户名或密码错误");
     }
     user.lastLoginAt = new Date();
@@ -77,7 +82,9 @@ export class AuthService {
         username: user.username,
         status: "success",
       });
-    } catch {}
+    } catch (err) {
+      this.logger.warn('Failed to save login log:', err.message);
+    }
 
     return this.generateTokens(user);
   }

@@ -14,6 +14,9 @@ export class Todo {
   @Column({ name: 'is_done', default: false })
   isDone: boolean;
 
+  @Column({ name: 'user_id', type: 'integer', nullable: true })
+  userId: number;
+
   @Column({ name: 'tag', type: 'varchar', length: 50, nullable: true })
   tag: string | null;
 

@@ -90,9 +90,9 @@ function TodoList({ priority, title, accentColor }: { priority: string; title: s
   };
   const c = colorMap[accentColor];
 
-  const fetchTodos = async () => {
+  const fetchTodos = async (signal?: AbortSignal) => {
     try {
-      const res = await api.get(`/todos?priority=${priority}`);
+      const res = await api.get(`/todos?priority=${priority}`, { signal });
       setTodos(Array.isArray(res.data) ? res.data : []);
     } catch {
       // silent
@@ -101,7 +101,11 @@ function TodoList({ priority, title, accentColor }: { priority: string; title: s
     }
   };
 
-  useEffect(() => { fetchTodos(); }, [priority]);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchTodos(controller.signal);
+    return () => controller.abort();
+  }, [priority]);
 
   const addTodo = async () => {
     const content = input.trim();
@@ -629,22 +633,6 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* 动画样式 */}
-      <style>{`
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-            transform: translateY(10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-        .animate-fade-in {
-          animation: fadeIn 0.3s ease-out forwards;
-        }
-      `}</style>
     </div>
   );
 }
