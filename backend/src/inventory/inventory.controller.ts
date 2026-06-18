@@ -27,21 +27,25 @@ export class InventoryController {
   }
 
   @Get('low-stock')
+  @RequirePermission('inventory', 'view')
   getLowStock(@Query('limit') limit: number = 50) {
     return this.inventoryService.getLowStock(limit);
   }
 
   @Get('part/:partId')
+  @RequirePermission('inventory', 'view')
   findByPart(@Param('partId') partId: number) {
     return this.inventoryService.findByPart(partId);
   }
 
   @Get('logs/:partId')
+  @RequirePermission('inventory', 'view')
   getLogs(@Param('partId') partId: number, @Query('page') page: number = 1, @Query('page_size') pageSize: number = 20) {
     return this.inventoryService.getLogs(partId, page, pageSize);
   }
 
   @Post('adjust')
+  @RequirePermission('inventory', 'edit')
   adjustStock(@Body() body: { part_id: number; delta: number; reason: string }, @CurrentUser('id') userId: number) {
     return this.inventoryService.adjustStock(body.part_id, body.delta, body.reason, userId);
   }
@@ -59,17 +63,20 @@ export class InventoryController {
   }
 
   @Post('sync')
+  @RequirePermission('inventory', 'edit')
   syncFromParts() {
     return this.inventoryService.syncFromParts();
   }
 
 
   @Post('batch-update')
+  @RequirePermission('inventory', 'edit')
   batchUpdate(@Body() body: { ids: number[]; warehouse_location?: string; warehouse_zone?: string; min_stock?: number; max_stock?: number; notes?: string }) {
     return this.inventoryService.batchUpdate(body.ids, body);
   }
 
   @Post('batch-delete')
+  @RequirePermission('inventory', 'delete')
   batchDelete(@Body() body: { ids: number[] }) {
     return this.inventoryService.batchDelete(body.ids);
   }

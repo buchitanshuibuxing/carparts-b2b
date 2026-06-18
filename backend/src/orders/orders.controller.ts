@@ -17,16 +17,19 @@ export class OrdersController {
   }
 
   @Get('stats')
+  @RequirePermission('orders', 'view')
   getStats(@Query('date_from') df?: string, @Query('date_to') dt?: string) {
     return this.svc.getStats(df, dt);
   }
 
   @Get('default-price/:partId')
+  @RequirePermission('orders', 'view')
   getDefaultPrice(@Param('partId') partId: number) {
     return this.svc.getDefaultPrice(partId).then(p => ({ price: p }));
   }
 
   @Get(':id')
+  @RequirePermission('orders', 'view')
   findOne(@Param('id') id: number) { return this.svc.findOne(id); }
 
   @Post()
@@ -38,15 +41,19 @@ export class OrdersController {
   updateOrder(@Param('id') id: number, @Body() body: any) { return this.svc.updateOrder(id, body); }
 
   @Put(':id/status')
+  @RequirePermission('orders', 'edit')
   updateStatus(@Param('id') id: number, @Body() body: { status: string }) { return this.svc.updateStatus(id, body.status); }
 
   @Post(':id/cancel')
+  @RequirePermission('orders', 'edit')
   cancel(@Param('id') id: number, @Body() body: { reason: string }, @CurrentUser('id') uid: number) { return this.svc.cancel(id, body.reason, uid); }
 
   @Post(':id/items')
+  @RequirePermission('orders', 'edit')
   addItem(@Param('id') id: number, @Body() body: any) { return this.svc.addItem(id, body); }
 
   @Put('items/:itemId')
+  @RequirePermission('orders', 'edit')
   updateItem(@Param('itemId') itemId: number, @Body() body: any) { return this.svc.updateItem(itemId, body); }
 
   @Delete('items/:itemId')
@@ -58,8 +65,10 @@ export class OrdersController {
   deleteOrder(@Param('id') id: number) { return this.svc.deleteOrder(id); }
 
   @Post('batch-update-status')
+  @RequirePermission('orders', 'edit')
   batchUpdateStatus(@Body() body: { ids: number[]; status: string }) { return this.svc.batchUpdateStatus(body.ids, body.status); }
 
   @Post('batch-delete')
+  @RequirePermission('orders', 'delete')
   batchDelete(@Body() body: { ids: number[] }) { return this.svc.batchDelete(body.ids); }
 }
