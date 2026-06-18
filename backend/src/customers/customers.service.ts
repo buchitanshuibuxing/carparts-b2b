@@ -40,14 +40,16 @@ export class CustomersService {
 
   async update(id: number, data: any) {
     const c = await this.findOne(id);
-    const map: Record<string, string> = {
+    const allowedFields: Record<string, string> = {
       customer_code: 'customerCode', company_name: 'companyName', contact_person: 'contactPerson',
       customer_type: 'customerType', customer_level: 'customerLevel', credit_limit: 'creditLimit',
       payment_terms: 'paymentTerms', is_active: 'isActive',
     };
+    // 只允许更新白名单中的字段，防止 Mass Assignment
     for (const [k, v] of Object.entries(data)) {
-      const key = map[k] || k;
-      if (v !== undefined) (c as any)[key] = v;
+      if (allowedFields[k] && v !== undefined) {
+        (c as any)[allowedFields[k]] = v;
+      }
     }
     return this.repo.save(c);
   }
@@ -83,14 +85,20 @@ export class CustomersService {
   }
 
   async batchUpdate(ids: number[], data: any) {
-    const map = { company_name: 'companyName', contact_person: 'contactPerson', customer_type: 'customerType', customer_level: 'customerLevel', credit_limit: 'creditLimit', payment_terms: 'paymentTerms', is_active: 'isActive' };
+    const allowedFields: Record<string, string> = {
+      company_name: 'companyName', contact_person: 'contactPerson', customer_type: 'customerType',
+      customer_level: 'customerLevel', credit_limit: 'creditLimit', payment_terms: 'paymentTerms',
+      is_active: 'isActive',
+    };
     for (const id of ids) {
       const customer = await this.repo.findOne({ where: { id } });
       if (!customer) continue;
+      // 只允许更新白名单中的字段，防止 Mass Assignment
       for (const [k, v] of Object.entries(data)) {
         if (k === 'ids' || v === undefined || v === '') continue;
-        const key = map[k] || k;
-        (customer as any)[key] = v;
+        if (allowedFields[k]) {
+          (customer as any)[allowedFields[k]] = v;
+        }
       }
       await this.repo.save(customer);
     }

@@ -42,13 +42,15 @@ export class SuppliersService {
 
   async update(id: number, data: any) {
     const supplier = await this.findOne(id);
-    const map: Record<string, string> = {
+    const allowedFields: Record<string, string> = {
       supplier_code: 'supplierCode', company_name: 'companyName', contact_person: 'contactPerson',
       payment_terms: 'paymentTerms', lead_time_days: 'leadTimeDays', is_active: 'isActive', main_products: 'mainProducts',
     };
+    // 只允许更新白名单中的字段，防止 Mass Assignment
     for (const [k, v] of Object.entries(data)) {
-      const key = map[k] || k;
-      if (v !== undefined) (supplier as any)[key] = v;
+      if (allowedFields[k] && v !== undefined) {
+        (supplier as any)[allowedFields[k]] = v;
+      }
     }
     return this.supplierRepo.save(supplier);
   }
@@ -84,14 +86,19 @@ export class SuppliersService {
   }
 
   async batchUpdate(ids: number[], data: any) {
-    const map = { company_name: 'companyName', contact_person: 'contactPerson', payment_terms: 'paymentTerms', lead_time_days: 'leadTimeDays', is_active: 'isActive', main_products: 'mainProducts' };
+    const allowedFields: Record<string, string> = {
+      company_name: 'companyName', contact_person: 'contactPerson', payment_terms: 'paymentTerms',
+      lead_time_days: 'leadTimeDays', is_active: 'isActive', main_products: 'mainProducts',
+    };
     for (const id of ids) {
       const supplier = await this.supplierRepo.findOne({ where: { id } });
       if (!supplier) continue;
+      // 只允许更新白名单中的字段，防止 Mass Assignment
       for (const [k, v] of Object.entries(data)) {
         if (k === 'ids' || v === undefined || v === '') continue;
-        const key = map[k] || k;
-        (supplier as any)[key] = v;
+        if (allowedFields[k]) {
+          (supplier as any)[allowedFields[k]] = v;
+        }
       }
       await this.supplierRepo.save(supplier);
     }
