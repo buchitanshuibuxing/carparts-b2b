@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Package, ShoppingCart, AlertTriangle, Warehouse, Plus, Trash2, Check, CheckCircle2, Clock, Tag, Calendar, MoreHorizontal, Edit3, Save, X, ChevronDown } from 'lucide-react';
+import { Package, ShoppingCart, AlertTriangle, Warehouse, Plus, Trash2, Check, CheckCircle2, Clock, Tag, Calendar, Edit3, Save, X } from 'lucide-react';
 import { StatCard } from '@/components/ui/StatCard';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
