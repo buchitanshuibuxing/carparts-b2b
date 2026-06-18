@@ -18,8 +18,8 @@ export class SuppliersController {
   @Put(':id') update(@Param('id') id: number, @Body() body: any) { return this.svc.update(id, body); }
   @Put(':id/toggle') toggle(@Param('id') id: number, @Body() body: { is_active: boolean }) { return this.svc.toggleActive(id, body.is_active); }
   @Post('link-part') linkPart(@Body() body: any) { return this.svc.linkPart(body); }
-  @Delete(':id') remove(@Param('id') id: number) { return this.svc.remove(id); }
   @RequirePermission('suppliers', 'delete')
+  @Delete(':id') remove(@Param('id') id: number) { return this.svc.remove(id); }
 
   @Post('batch-update')
   batchUpdate(@Body() body: { ids: number[] } & Record<string, any>) {

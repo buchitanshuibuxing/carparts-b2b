@@ -13,8 +13,8 @@ export class QuotationsController {
   @Get('templates/:id') getTemplate(@Param('id') id: number) { return this.svc.getTemplate(id); }
   @Post('templates') saveTemplate(@Body() body: any) { return this.svc.saveTemplate(body); }
   @Put('templates/:id') updateTemplate(@Param('id') id: number, @Body() body: any) { return this.svc.updateTemplate(id, body); }
-  @Delete('templates/:id') deleteTemplate(@Param('id') id: number) { return this.svc.deleteTemplate(id); }
   @RequirePermission('quotations', 'delete')
+  @Delete('templates/:id') deleteTemplate(@Param('id') id: number) { return this.svc.deleteTemplate(id); }
 
   @Get() findAll() { return this.svc.findAll(); }
 
@@ -41,8 +41,8 @@ export class QuotationsController {
   @Get('payment-accounts/:id') getPaymentAccount(@Param('id') id: number) { return this.svc.getPaymentAccount(id); }
   @Post('payment-accounts') createPaymentAccount(@Body() body: any) { return this.svc.createPaymentAccount(body); }
   @Put('payment-accounts/:id') updatePaymentAccount(@Param('id') id: number, @Body() body: any) { return this.svc.updatePaymentAccount(id, body); }
-  @Delete('payment-accounts/:id') deletePaymentAccount(@Param('id') id: number) { return this.svc.deletePaymentAccount(id); }
   @RequirePermission('quotations', 'delete')
+  @Delete('payment-accounts/:id') deletePaymentAccount(@Param('id') id: number) { return this.svc.deletePaymentAccount(id); }
 
   @Get(':id') findOne(@Param('id') id: number) { return this.svc.findOne(id); }
   @Put(':id') update(@Param('id') id: number, @Body() body: any) { return this.svc.updateQuotation(id, body); }

@@ -139,8 +139,10 @@ export class SystemService {
 
       if (!fs.existsSync(logFile)) return [{ raw: '日志文件不存在' }];
 
+      // 限制最大行数，防止内存压力
+      const safeLines = Math.min(Math.max(1, lines), 500);
       // 读取更多行以便过滤后仍有足够内容
-      const fetchLines = lines * 5;
+      const fetchLines = safeLines * 5;
       const content = execSync(`tail -n ${fetchLines} "${logFile}"`, { encoding: 'utf-8' });
 
       // 去掉 ANSI 颜色代码

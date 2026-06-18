@@ -23,8 +23,8 @@ export class PricesController {
   @Get('part/:partId') findByPart(@Param('partId') partId: number) { return this.svc.findByPart(partId); }
   @Get('history/:partId') getHistory(@Param('partId') partId: number) { return this.svc.getHistory(partId); }
   @Post('set') setPrice(@Body() body: any) { return this.svc.setPrice(body); }
-  @Delete(':id') deletePrice(@Param('id') id: number) { return this.svc.deletePrice(id); }
   @RequirePermission('prices', 'delete')
+  @Delete(':id') deletePrice(@Param('id') id: number) { return this.svc.deletePrice(id); }
 
   @Post('sync')
   syncFromParts() {
