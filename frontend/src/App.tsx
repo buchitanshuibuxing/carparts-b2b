@@ -6,6 +6,7 @@ import { AppShell } from '@/components/layout/AppShell';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { ToastProvider } from '@/components/ui/Toast';
 import { ConfirmProvider } from '@/components/ui/ConfirmDialog';
+import api from '@/lib/api';
 import Login from '@/pages/Login';
 import Dashboard from '@/pages/Dashboard';
 import PartsCatalog from '@/pages/PartsCatalog';
@@ -25,9 +26,43 @@ import Settings from '@/pages/Settings';
 import UserManagement from '@/pages/UserManagement';
 import NotFound from '@/pages/NotFound';
 
+function useSiteSettings() {
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const { data } = await api.get('/settings');
+        const settings = data.data || data || {};
+
+        // 设置页面标题
+        const companyName = settings.company_name;
+        if (companyName) {
+          document.title = companyName;
+        }
+
+        // 设置 favicon
+        const logoUrl = settings.company_logo_url;
+        if (logoUrl) {
+          let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
+          if (!link) {
+            link = document.createElement('link');
+            link.rel = 'icon';
+            document.head.appendChild(link);
+          }
+          link.href = logoUrl;
+        }
+      } catch {
+        // 忽略错误，使用默认值
+      }
+    };
+    loadSettings();
+  }, []);
+}
+
 function App() {
   const checkAuth = useAuthStore((s) => s.checkAuth);
   const isLoading = useAuthStore((s) => s.isLoading);
+
+  useSiteSettings();
 
   useEffect(() => {
     checkAuth();

@@ -1,0 +1,32 @@
+export declare class ImageAsset {
+    id: number;
+    partId: number;
+    filePath: string;
+    fileName: string;
+    fileSize: number;
+    width: number;
+    height: number;
+    type: string;
+    mimeType: string;
+    duration: number;
+    ocrText: string;
+    ocrStatus: string;
+    tags: string;
+    category: string;
+    isPrimary: boolean;
+    sortOrder: number;
+    classificationId: number;
+    thumbnailSmallPath: string;
+    thumbnailMediumPath: string;
+    thumbnailLargePath: string;
+    recognitionStatus: string;
+    recognizedOeNumber: string;
+    recognizedPartType: string;
+    recognizedBrand: string;
+    partNameCn: string;
+    partNameEn: string;
+    recognitionConfidence: number;
+    recognitionResult: Record<string, any>;
+    uploadedBy: number;
+    createdAt: Date;
+}

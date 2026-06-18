@@ -14,6 +14,7 @@ import type { ImageAsset, AssetClassification } from '@/types/image-asset';
 
 import { useToast } from '@/components/ui/Toast';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
+import { useImportProgress } from '@/hooks/useImportProgress';
 // Standalone input component to avoid cursor issues
 function OeHintInput({ value, onChange, folderHint }: { value: string; onChange: (v: string) => void; folderHint: string }) {
   const [localValue, setLocalValue] = useState(value);
@@ -112,7 +113,20 @@ interface ImportSource {
   lastSyncAt: string | null;
   status: string;
   errorMessage: string;
-  importProgress: { imported: number; skipped: number; errors: number; total: number; currentFile: string; fileLog?: { name: string; oe: string; status: string; error: string }[] } | null;
+  importProgress: {
+    imported: number;
+    skipped: number;
+    errors: number;
+    total: number;
+    currentFile: string;
+    currentFileSize?: number;
+    currentFileIndex?: number;
+    lastActivityAt?: string;
+    estimatedTimeLeft?: string;
+    downloadSpeed?: number;
+    downloadSpeedText?: string;
+    fileLog?: { name: string; oe: string; status: string; error: string }[];
+  } | null;
 }
 
 interface DirItem {
@@ -159,6 +173,50 @@ export default function Assets() {
   });
   const [importing, setImporting] = useState<number | null>(null);
   const [testing, setTesting] = useState<number | null>(null);
+
+  // WebSocket for real-time import progress
+  const { progress: wsProgress, connected: wsConnected } = useImportProgress({
+    sourceId: importing,
+    enabled: importing !== null,
+    onProgress: (data) => {
+      setImportProgress({
+        status: data.status,
+        progress: {
+          imported: data.imported,
+          skipped: data.skipped,
+          errors: data.errors,
+          total: data.total,
+          currentFile: data.currentFile,
+          fileLog: [],
+        },
+        errorMessage: '',
+      });
+    },
+    onComplete: (data) => {
+      setImportProgress({
+        status: 'complete',
+        progress: {
+          imported: data.imported,
+          skipped: data.skipped,
+          errors: data.errors,
+          total: data.imported + data.skipped + data.errors,
+          currentFile: '',
+          fileLog: [],
+        },
+        errorMessage: '',
+      });
+      setImporting(null);
+      fetchAssets();
+      fetchSources();
+    },
+    onError: (error) => {
+      setImportProgress({
+        status: 'error',
+        progress: null,
+        errorMessage: error,
+      });
+    },
+  });
   const [newMapFolder, setNewMapFolder] = useState('');
   const [newMapClassId, setNewMapClassId] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -582,6 +640,53 @@ export default function Assets() {
     }
   };
 
+  const handleExtractOe = async (id: number) => {
+    setRecognizing(true);
+    try {
+      const { data: res } = await api.post(`/assets/${id}/extract-oe`);
+      const result = res.data || res;
+      if (result.success) {
+        success(result.message);
+        // Refresh preview
+        const { data: assetRes } = await api.get(`/assets/${id}`);
+        setPreviewAsset(assetRes.data || assetRes);
+        fetchAssets();
+      } else {
+        warning(result.message);
+      }
+    } catch (err: any) {
+      error(err.response?.data?.message || '提取OE号失败');
+    } finally {
+      setRecognizing(false);
+    }
+  };
+
+  const handleBatchExtractOe = async () => {
+    if (!selectedIds.size) return;
+    const ids = Array.from(selectedIds);
+    setRecognizing(true);
+    setBatchProgress({ active: true, title: '提取OE号', total: ids.length, current: 0, success: 0, failed: 0, done: false });
+    try {
+      const { data: res } = await api.post('/assets/batch-extract-oe', { ids });
+      const result = res.data || res;
+      setBatchProgress(p => ({
+        ...p,
+        current: ids.length,
+        success: result.processed || 0,
+        failed: result.failed || 0,
+        done: true
+      }));
+      success(`提取完成：${result.matched || 0} 个匹配到配件`);
+      setSelectedIds(new Set());
+      fetchAssets();
+    } catch (err: any) {
+      error(err.response?.data?.message || '批量提取失败');
+      setBatchProgress(p => ({ ...p, failed: ids.length, done: true }));
+    } finally {
+      setRecognizing(false);
+    }
+  };
+
   const handleBatchUndoRecognize = async () => {
     if (!selectedIds.size) return;
     const confirmed = await confirm({ message: `确定撤销 ${selectedIds.size} 个素材的识别结果？`, variant: "danger" });
@@ -834,6 +939,16 @@ export default function Assets() {
   const stopImport = async (id: number) => {
     try {
       await api.post(`/assets/sources/${id}/stop`);
+      // If still importing after 3 seconds, force stop
+      setTimeout(async () => {
+        if (importing === id) {
+          try {
+            await api.post(`/assets/sources/${id}/force-stop`);
+            setImporting(null);
+            fetchSources();
+          } catch {}
+        }
+      }, 3000);
     } catch (err: any) {
       error(err.response?.data?.message || '停止失败');
     }
@@ -956,6 +1071,7 @@ export default function Assets() {
           <button onClick={() => setShowBatchClassify(true)} className="px-3 py-1.5 bg-blue-500 text-white rounded-lg text-sm hover:bg-blue-600">批量分类</button>
           <button onClick={() => setShowBatchEdit(true)} className="px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-sm hover:bg-emerald-600">批量修改</button>
           <button onClick={handleBatchDownload} className="px-3 py-1.5 bg-cyan-500 text-white rounded-lg text-sm hover:bg-cyan-600 flex items-center gap-1"><Download size={14} />批量下载</button>
+          <button onClick={handleBatchExtractOe} disabled={recognizing} className="px-3 py-1.5 bg-cyan-600 text-white rounded-lg text-sm hover:bg-cyan-700 disabled:opacity-50">批量提取OE</button>
           <button onClick={() => handleBatchRecognize({ ocr: true })} disabled={recognizing} className="px-3 py-1.5 bg-orange-500 text-white rounded-lg text-sm hover:bg-orange-600 disabled:opacity-50">批量 OCR</button>
           <button onClick={() => handleBatchRecognize({ ai: true })} disabled={recognizing} className="px-3 py-1.5 bg-purple-500 text-white rounded-lg text-sm hover:bg-purple-600 disabled:opacity-50">批量 AI 识别</button>
           <button onClick={() => handleBatchRecognize({ oeLookup: true })} disabled={recognizing} className="px-3 py-1.5 bg-teal-500 text-white rounded-lg text-sm hover:bg-teal-600 disabled:opacity-50">批量 OE 查询</button>
@@ -1209,8 +1325,8 @@ export default function Assets() {
                     {previewAsset.type === 'video' && previewAsset.duration > 0 && <span>{Math.floor(previewAsset.duration / 60)}分{Math.floor(previewAsset.duration % 60)}秒</span>}
                   </div>
                   {/* Copy & Download buttons centered */}
-                  {previewAsset.type !== 'video' && (
-                    <div className="flex justify-center gap-3 mt-3">
+                  <div className="flex justify-center gap-3 mt-3">
+                    {previewAsset.type !== 'video' && (
                       <button
                         onClick={handleCopyImage}
                         disabled={copyState === 'copying'}
@@ -1219,19 +1335,18 @@ export default function Assets() {
                         <Copy size={16} />
                         {copyState === 'copying' ? '复制中...' : copyState === 'copied' ? '已复制 ✓' : copyState === 'error' ? '复制失败' : '复制图片'}
                       </button>
-                      <a
-                        href={imageUrl(previewAsset.filePath)}
-                        download={previewAsset.fileName}
-                        className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg border transition bg-white hover:bg-blue-50 border-blue-300 text-blue-700"
-                      >
-                        <Download size={16} />
-                        下载原图
-                      </a>
-                    </div>
-                  )}
+                    )}
+                    <a
+                      href={imageUrl(previewAsset.filePath)}
+                      download={previewAsset.fileName}
+                      className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg border transition bg-white hover:bg-blue-50 border-blue-300 text-blue-700"
+                    >
+                      <Download size={16} />
+                      {previewAsset.type === 'video' ? '下载视频' : '下载原图'}
+                    </a>
+                  </div>
                 </div>
                 {/* Right: Edit fields — uncontrolled inputs with refs */}
-                {previewAsset.type !== 'video' && (
                   <div className="w-80 shrink-0 space-y-4">
                     <div className="space-y-3">
                       <h4 className="text-sm font-semibold text-gray-700 border-b pb-2">配件信息</h4>
@@ -1273,15 +1388,15 @@ export default function Assets() {
                       <button onClick={() => handleDelete(previewAsset.id)} className="w-full px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm hover:bg-red-100 transition">删除素材</button>
                       <p className="text-xs text-gray-500 font-medium">手动识别</p>
                       <div className="grid grid-cols-2 gap-2">
+                        <button onClick={() => handleExtractOe(previewAsset.id)} disabled={recognizing} className="px-3 py-2 bg-cyan-500 text-white rounded-lg text-xs hover:bg-cyan-600 disabled:opacity-50 transition">{recognizing ? '...' : '提取OE号'}</button>
                         <button onClick={() => handleRecognize(previewAsset.id, { ocr: true })} disabled={recognizing} className="px-3 py-2 bg-orange-500 text-white rounded-lg text-xs hover:bg-orange-600 disabled:opacity-50 transition">{recognizing ? '...' : 'OCR'}</button>
                         <button onClick={() => handleRecognize(previewAsset.id, { ai: true })} disabled={recognizing} className="px-3 py-2 bg-purple-500 text-white rounded-lg text-xs hover:bg-purple-600 disabled:opacity-50 transition">{recognizing ? '...' : 'AI 识别'}</button>
                         <button onClick={() => handleRecognize(previewAsset.id, { oeLookup: true })} disabled={recognizing} className="px-3 py-2 bg-teal-500 text-white rounded-lg text-xs hover:bg-teal-600 disabled:opacity-50 transition">{recognizing ? '...' : 'OE 查询'}</button>
-                        <button onClick={() => handleRecognize(previewAsset.id, { ocr: true, ai: true, oeLookup: true })} disabled={recognizing} className="px-3 py-2 bg-gradient-to-r from-orange-500 to-purple-500 text-white rounded-lg text-xs hover:shadow-lg disabled:opacity-50 transition">{recognizing ? '...' : '全部'}</button>
+                        <button onClick={() => handleRecognize(previewAsset.id, { ocr: true, ai: true, oeLookup: true })} disabled={recognizing} className="col-span-2 px-3 py-2 bg-gradient-to-r from-orange-500 to-purple-500 text-white rounded-lg text-xs hover:shadow-lg disabled:opacity-50 transition">{recognizing ? '...' : '全部识别'}</button>
                       </div>
                       <button onClick={() => handleUndoRecognize(previewAsset.id)} disabled={recognizing} className="w-full px-3 py-2 bg-gray-100 text-gray-600 rounded-lg text-xs hover:bg-gray-200 disabled:opacity-50 transition">撤销识别</button>
                     </div>
                   </div>
-                )}
               </div>
             </div>
           </div>
@@ -1509,9 +1624,32 @@ export default function Assets() {
                                 {s.importProgress.errors > 0 && <span className="text-red-400">错误 {s.importProgress.errors}</span>}
                               </div>
                               {s.importProgress.currentFile && (
-                                <p className={`text-xs mt-1 truncate ${editSource?.id === s.id ? 'text-white/50' : 'text-gray-400'}`}>
-                                  {s.importProgress.currentFile}
-                                </p>
+                                <div className={`mt-1.5 text-xs ${editSource?.id === s.id ? 'text-white/50' : 'text-gray-400'}`}>
+                                  <p className="truncate" title={s.importProgress.currentFile}>
+                                    📄 {s.importProgress.currentFile}
+                                    {s.importProgress.currentFileSize && (
+                                      <span className="ml-1 text-gray-400">
+                                        ({(s.importProgress.currentFileSize / 1024 / 1024).toFixed(1)}MB)
+                                      </span>
+                                    )}
+                                  </p>
+                                  <div className="flex gap-3 mt-1">
+                                    {s.importProgress.currentFileIndex && (
+                                      <span>进度: {s.importProgress.currentFileIndex}/{s.importProgress.total}</span>
+                                    )}
+                                    {s.importProgress.downloadSpeedText && (
+                                      <span className="text-green-500">⬇️ {s.importProgress.downloadSpeedText}</span>
+                                    )}
+                                    {s.importProgress.estimatedTimeLeft && (
+                                      <span>⏱️ {s.importProgress.estimatedTimeLeft}</span>
+                                    )}
+                                  </div>
+                                  {s.importProgress.lastActivityAt && (
+                                    <p className="text-gray-400 mt-0.5">
+                                      最后活动: {new Date(s.importProgress.lastActivityAt).toLocaleTimeString('zh-CN')}
+                                    </p>
+                                  )}
+                                </div>
                               )}
                               {/* File log */}
                               {s.importProgress.fileLog && s.importProgress.fileLog.length > 0 && (

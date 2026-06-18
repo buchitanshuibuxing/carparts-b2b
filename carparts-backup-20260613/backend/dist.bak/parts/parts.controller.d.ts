@@ -1,0 +1,113 @@
+import { PartsService } from './parts.service';
+export declare class PartsController {
+    private partsService;
+    constructor(partsService: PartsService);
+    findAll(page?: number, pageSize?: number, classificationId?: number, category?: string, brand?: string, carModel?: string, partType?: string, isActive?: string, keyword?: string): Promise<import("../common/dto/paginated-response.dto").PaginatedResponseDto<{
+        inventory: import("../inventory/entities/inventory.entity").Inventory | {
+            quantity: number;
+            reservedQuantity: number;
+            minStock: number;
+        };
+        id: number;
+        oeNumber: string;
+        partNameCn: string;
+        partNameEn: string;
+        partNameKo: string;
+        classificationId: number;
+        classification: import("./entities/part-classification.entity").PartClassification;
+        category: string;
+        subCategory: string;
+        brand: string;
+        carModel: string;
+        engineType: string;
+        modelYearFrom: number;
+        modelYearTo: number;
+        partType: string;
+        specifications: Record<string, any>;
+        unit: string;
+        weightKg: number;
+        dimensionsCm: string;
+        hsCode: string;
+        notes: string;
+        isActive: boolean;
+        createdBy: number;
+        updatedBy: number;
+        createdAt: Date;
+        updatedAt: Date;
+    }>>;
+    search(query: string, limit?: number): Promise<{
+        quantity: number;
+        id: number;
+        oeNumber: string;
+        partNameCn: string;
+        partNameEn: string;
+        partNameKo: string;
+        classificationId: number;
+        classification: import("./entities/part-classification.entity").PartClassification;
+        category: string;
+        subCategory: string;
+        brand: string;
+        carModel: string;
+        engineType: string;
+        modelYearFrom: number;
+        modelYearTo: number;
+        partType: string;
+        specifications: Record<string, any>;
+        unit: string;
+        weightKg: number;
+        dimensionsCm: string;
+        hsCode: string;
+        notes: string;
+        isActive: boolean;
+        createdBy: number;
+        updatedBy: number;
+        createdAt: Date;
+        updatedAt: Date;
+    }[]>;
+    getCategories(): Promise<any[]>;
+    findOne(id: number): Promise<{
+        inventory: import("../inventory/entities/inventory.entity").Inventory | null;
+        id: number;
+        oeNumber: string;
+        partNameCn: string;
+        partNameEn: string;
+        partNameKo: string;
+        classificationId: number;
+        classification: import("./entities/part-classification.entity").PartClassification;
+        category: string;
+        subCategory: string;
+        brand: string;
+        carModel: string;
+        engineType: string;
+        modelYearFrom: number;
+        modelYearTo: number;
+        partType: string;
+        specifications: Record<string, any>;
+        unit: string;
+        weightKg: number;
+        dimensionsCm: string;
+        hsCode: string;
+        notes: string;
+        isActive: boolean;
+        createdBy: number;
+        updatedBy: number;
+        createdAt: Date;
+        updatedAt: Date;
+    }>;
+    create(body: any): Promise<import("./entities/part.entity").Part>;
+    update(id: number, body: any): Promise<import("./entities/part.entity").Part>;
+    remove(id: number): Promise<void>;
+    batchDelete(body: {
+        ids: number[];
+    }): Promise<{
+        deleted: number;
+    }>;
+    batchTranslate(body: {
+        ids?: number[];
+    }): Promise<{
+        total: number;
+        translated: number;
+        failed: number;
+        errors: string[];
+    }>;
+}

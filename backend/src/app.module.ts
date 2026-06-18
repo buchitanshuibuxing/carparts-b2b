@@ -17,6 +17,8 @@ import { AssetsModule } from './assets/assets.module';
 import { FacebookModule } from './facebook/facebook.module';
 import { ImportExportModule } from './import-export/import-export.module';
 import { SettingsModule } from './settings/settings.module';
+import { TodosModule } from './todos/todos.module';
+import { SystemModule } from './system/system.module';
 import { DatabaseModule } from './database/database.module';
 import { CommonModule } from './common/common.module';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -55,6 +57,8 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     FacebookModule,
     ImportExportModule,
     SettingsModule,
+    TodosModule,
+    SystemModule,
   ],
 })
 export class AppModule {}

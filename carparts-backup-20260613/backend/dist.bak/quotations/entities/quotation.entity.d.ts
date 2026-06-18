@@ -1,0 +1,34 @@
+export declare class Quotation {
+    id: number;
+    quotationNumber: string;
+    templateId?: number;
+    customerId: number;
+    totalAmount: number;
+    currency: string;
+    status: string;
+    remark: string;
+    pdfPath: string;
+    sellerCompany: string;
+    sellerContact: string;
+    sellerPhone: string;
+    sellerEmail: string;
+    sellerAddress: string;
+    logoUrl: string;
+    buyerCompany: string;
+    buyerContact: string;
+    buyerPhone: string;
+    buyerEmail: string;
+    buyerAddress: string;
+    tradeTerms: string;
+    portLoading: string;
+    portDest: string;
+    deliveryTime: string;
+    validUntil: string;
+    discountPct: number;
+    shippingCost: number;
+    paymentStages: any[];
+    paymentAccountId: number;
+    notes: string;
+    createdAt: Date;
+    updatedAt: Date;
+}

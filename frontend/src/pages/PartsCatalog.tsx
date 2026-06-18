@@ -152,7 +152,7 @@ export default function PartsCatalog() {
 
   // Batch translate
   const [translating, setTranslating] = useState(false);
-  const [translateResult, setTranslateResult] = useState<{ total: number; translated: number; failed: number; errors: string[] } | null>(null);
+  const [translateResult, setTranslateResult] = useState<{ total: number; translated: number; failed: number; skipped?: number; aiTranslated?: number; errors: string[] } | null>(null);
 
   // Batch edit
   const [showBatchEdit, setShowBatchEdit] = useState(false);
@@ -214,6 +214,7 @@ export default function PartsCatalog() {
     try {
       const ids = selectedIds.size > 0 ? Array.from(selectedIds) : undefined;
       const { data } = await api.post('/parts/batch-translate', { ids });
+      // Backend returns data directly (no TransformInterceptor wrapper)
       setTranslateResult(data);
       fetchParts();
     } catch (err: any) {
@@ -309,7 +310,10 @@ export default function PartsCatalog() {
       {/* Translate result */}
       {translateResult && (
         <div className={`rounded-xl p-3 text-sm ${translateResult.failed === 0 ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'}`}>
-          翻译完成：共 {translateResult.total} 条，成功 {translateResult.translated} 条，失败 {translateResult.failed} 条
+          翻译完成：共 {translateResult.total} 条，成功 {translateResult.translated} 条，跳过 {translateResult.skipped || 0} 条，失败 {translateResult.failed} 条
+          {translateResult.aiTranslated !== undefined && translateResult.aiTranslated > 0 && (
+            <span className="ml-2 text-blue-600">(AI翻译 {translateResult.aiTranslated} 个唯一名称)</span>
+          )}
           {translateResult.errors.length > 0 && (
             <button onClick={() => setTranslateResult(null)} className="ml-2 underline">关闭</button>
           )}
