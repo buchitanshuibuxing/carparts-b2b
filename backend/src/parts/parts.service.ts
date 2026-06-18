@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
+import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { DataSource } from "typeorm";
 import { Repository, Like, In } from 'typeorm';
 import { Part } from './entities/part.entity';
 import { PartClassification } from './entities/part-classification.entity';
@@ -9,11 +10,13 @@ import { PaginatedResponseDto } from '../common/dto/paginated-response.dto';
 
 @Injectable()
 export class PartsService {
+  private readonly logger = new Logger(PartsService.name);
   constructor(
     @InjectRepository(Part) private partRepo: Repository<Part>,
     @InjectRepository(PartClassification) private partClassRepo: Repository<PartClassification>,
     @InjectRepository(Inventory) private inventoryRepo: Repository<Inventory>,
     @InjectRepository(ImageAsset) private assetRepo: Repository<ImageAsset>,
+    private dataSource: DataSource,
   ) {}
 
   async findAll(page = 1, pageSize = 20, filters?: { category?: string; brand?: string; car_model?: string; part_type?: string; is_active?: boolean; keyword?: string }) {
@@ -208,9 +211,213 @@ export class PartsService {
     return results;
   }
 
-  async batchTranslate(ids: number[], targetLang: string, apiKey?: string) {
-    // Implementation for batch translation
-    return { success: true, message: '翻译功能待实现' };
+
+  // Baidu Translate API
+  private async baiduTranslate(text: string, appid: string, key: string): Promise<string> {
+    const salt = Math.floor(Math.random() * 90000 + 10000).toString();
+    const str = appid + text + salt + key;
+    const { createHash } = await import('crypto');
+    const sign = createHash('md5').update(str).digest('hex');
+    
+    const url = 'https://fanyi-api.baidu.com/api/trans/vip/translate';
+    
+    try {
+      const params = new URLSearchParams({
+        q: text,
+        from: 'zh',
+        to: 'en',
+        appid: appid,
+        salt: salt,
+        sign: sign,
+      });
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params,
+      });
+      
+      const result = await response.json();
+      if (result.trans_result && result.trans_result.length > 0) {
+        return result.trans_result[0].dst;
+      }
+      return '';
+    } catch (error) {
+      this.logger.error('[Baidu Translate] failed: ' + error.message);
+      return '';
+    }
+  }
+
+  async batchTranslate(ids?: number[]) {
+    this.logger.log(`[Translate] batchTranslate called with ids: ${ids ? ids.length : 'undefined'}`);
+
+    // Step 1: Get ALL selected parts (including those with existing translations)
+    let allParts: any[] = [];
+    if (ids && ids.length > 0) {
+      allParts = await this.partRepo.createQueryBuilder('part')
+        .where('part.part_name_cn IS NOT NULL')
+        .andWhere("part.part_name_cn != ''")
+        .andWhere('part.id IN (:...ids)', { ids })
+        .getMany();
+    } else {
+      allParts = await this.partRepo.createQueryBuilder('part')
+        .where('part.part_name_cn IS NOT NULL')
+        .andWhere("part.part_name_cn != ''")
+        .getMany();
+    }
+
+    const totalCount = ids ? ids.length : allParts.length;
+    this.logger.log(`[Translate] Found ${allParts.length} parts to translate, totalCount: ${totalCount}`);
+
+    if (allParts.length === 0) {
+      return { total: totalCount, translated: 0, failed: 0, skipped: totalCount, aiTranslated: 0, errors: [] };
+    }
+
+    // Step 2: Get existing translations from database
+    const existingTranslations = await this.partRepo.createQueryBuilder('part')
+      .select('part.part_name_cn, part.part_name_en')
+      .where('part.part_name_en IS NOT NULL')
+      .andWhere("part.part_name_en != ''")
+      .groupBy('part.part_name_cn, part.part_name_en')
+      .getRawMany();
+
+    const translationCache = new Map<string, string>();
+    for (const t of existingTranslations) {
+      if (t.part_name_cn && t.part_name_en) {
+        translationCache.set(t.part_name_cn, t.part_name_en);
+      }
+    }
+
+    // Step 3: Find unique Chinese names that need AI translation
+    const uniqueCnNames = new Set<string>();
+    for (const part of allParts) {
+      if (part.partNameCn && !translationCache.has(part.partNameCn)) {
+        uniqueCnNames.add(part.partNameCn);
+      }
+    }
+
+    // Step 4: Get AI settings
+    const settings = await this.dataSource.query(
+      "SELECT key, value FROM settings WHERE key IN ('oe_lookup_api_key', 'oe_lookup_api_url', 'oe_lookup_model', 'oe_lookup_api_type', 'translate_api_appid', 'translate_api_key', 'translate_enabled')"
+    );
+    const settingsMap = settings.reduce((acc, s) => ({ ...acc, [s.key]: s.value }), {});
+
+    const apiKey = settingsMap.oe_lookup_api_key;
+    const apiUrl = settingsMap.oe_lookup_api_url || 'https://api.xiaomimimo.com/v1/chat/completions';
+    const model = settingsMap.oe_lookup_model || 'mimo-v2.5-pro';
+    const translateAppid = settingsMap.translate_api_appid || '';
+    const translateKey = settingsMap.translate_api_key || '';
+    const translateEnabled = settingsMap.translate_enabled !== 'false';
+
+    // Step 5: Translate unique names
+    let aiTranslated = 0;
+    const errors: string[] = [];
+    this.logger.log("[Translate] Starting translation...");
+
+    if (uniqueCnNames.size > 0) {
+      for (const cnName of uniqueCnNames) {
+        let translated = false;
+
+        // Try Baidu Translate first (faster and more stable)
+        if (translateAppid && translateKey && translateEnabled) {
+          try {
+            const enName = await this.baiduTranslate(cnName, translateAppid, translateKey);
+            if (enName) {
+              translationCache.set(cnName, enName);
+              aiTranslated++;
+              this.logger.log(`[Translate-Baidu] ${cnName} → ${enName}`);
+              translated = true;
+            }
+          } catch (error: any) {
+            this.logger.warn(`[Translate-Baidu] failed for ${cnName}: ${error.message}`);
+          }
+        }
+
+        // Fallback to AI translation if Baidu failed or not configured
+        if (!translated && apiKey) {
+          try {
+            const prompt = `请将以下汽车配件中文名称翻译成英文，只返回英文翻译结果，不要添加其他内容：${cnName}`;
+
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 15000);
+
+            const response = await fetch(apiUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`,
+              },
+              body: JSON.stringify({
+                model: model,
+                messages: [{ role: 'user', content: prompt }],
+                max_tokens: 200,
+                temperature: 0.1,
+              }),
+              signal: controller.signal,
+            });
+
+            clearTimeout(timeout);
+
+            if (!response.ok) {
+              throw new Error(`API error: ${response.status}`);
+            }
+
+            const data = await response.json();
+            const enName = data.choices?.[0]?.message?.content?.trim() || '';
+
+            if (enName) {
+              translationCache.set(cnName, enName);
+              aiTranslated++;
+              this.logger.log(`[Translate-AI] ${cnName} → ${enName}`);
+              translated = true;
+            }
+          } catch (error: any) {
+            this.logger.warn(`[Translate-AI] failed for ${cnName}: ${error.message}`);
+          }
+        }
+
+        if (!translated) {
+          errors.push(`${cnName}: 翻译失败`);
+        }
+
+        // Add small delay to avoid rate limiting
+        await new Promise(r => setTimeout(r, 50));
+      }
+    }
+
+    // Step 6: Update ALL selected parts with translations
+    let translated = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (const part of allParts) {
+      const cnName = part.partNameCn;
+      if (translationCache.has(cnName)) {
+        const enName = translationCache.get(cnName);
+        if (enName) {
+          part.partNameEn = enName;
+          await this.partRepo.save(part);
+          translated++;
+        } else {
+          failed++;
+        }
+      } else {
+        failed++;
+      }
+    }
+
+    // Calculate skipped (parts not in the selected list)
+    const skippedCount = totalCount - allParts.length;
+
+    this.logger.log(`[Translate] Returning: total=${totalCount}, translated=${translated}, failed=${failed}, skipped=${skippedCount}, aiTranslated=${aiTranslated}`);
+    return {
+      total: totalCount,
+      translated,
+      failed,
+      skipped: skippedCount,
+      aiTranslated,
+      errors
+    };
   }
 
   async getClassifications() {

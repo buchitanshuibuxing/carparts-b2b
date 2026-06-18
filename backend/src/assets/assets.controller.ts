@@ -115,6 +115,9 @@ export class AssetsController {
   @Post('sources/:id/stop')
   stopImport(@Param('id') id: number) { return this.importSourcesSvc.stopImport(id); }
 
+  @Post('sources/:id/force-stop')
+  forceStopImport(@Param('id') id: number) { return this.importSourcesSvc.forceStopImport(id); }
+
   @Get('sources/:id/progress')
   getImportProgress(@Param('id') id: number) { return this.importSourcesSvc.getImportProgress(id); }
 
@@ -189,5 +192,18 @@ export class AssetsController {
   @Post(':id/watermark')
   addWatermark(@Param('id') id: number, @Body() body: { text: string }) {
     return this.svc.addWatermark(id, body.text);
+  }
+
+  // OE extraction from filename
+  @Post(':id/extract-oe')
+  @RequirePermission('assets', 'edit')
+  extractOeFromFilename(@Param('id') id: number) {
+    return this.svc.extractOeFromFilename(id);
+  }
+
+  @Post('batch-extract-oe')
+  @RequirePermission('assets', 'edit')
+  batchExtractOeFromFilenames(@Body() body: { ids: number[] }) {
+    return this.svc.batchExtractOeFromFilenames(body.ids);
   }
 }

@@ -853,7 +853,77 @@ export class AssetsService {
       return null;
     }
   }
-}
+
+  // Extract OE number from filename and match local catalog
+  async extractOeFromFilename(id: number) {
+    const asset = await this.assetRepo.findOne({ where: { id } });
+    if (!asset) throw new NotFoundException('素材不存在');
+
+    const extractOeNumber = (filename: string): string | null => {
+      const noExt = filename.replace(/\.[^.]+$/, '');
+      const upper = noExt.toUpperCase();
+      const stripped = upper
+        .replace(/[-_]\d{1,2}$/, '')
+        .replace(/\s*\(\d+\)\s*$/, '')
+        .replace(/[\u4e00-\u9fa5]+$/, '')
+        .trim();
+
+      let m = stripped.match(/^(\d{5}-[A-Z0-9]{5})$/);
+      if (m) return m[1];
+      m = stripped.match(/^(\d{5}-\d{5})$/);
+      if (m) return m[1];
+      return null;
+    };
+
+    const oeNumber = extractOeNumber(asset.fileName);
+    if (!oeNumber) {
+      return { success: false, message: '文件名中未检测到OE号码' };
+    }
+
+    await this.assetRepo.update(id, { recognizedOeNumber: oeNumber });
+
+    const part = await this.partRepo.findOne({ where: { oeNumber } });
+    if (part) {
+      await this.assetRepo.update(id, {
+        partId: part.id,
+        recognizedPartType: part.category || '',
+        recognizedBrand: part.brand || '',
+        partNameCn: part.partNameCn || '',
+        partNameEn: part.partNameEn || '',
+        recognitionStatus: 'done',
+      });
+      return {
+        success: true,
+        message: `OE号 ${oeNumber} 已匹配到配件: ${part.partNameCn || part.oeNumber}`,
+        oeNumber,
+        part: { id: part.id, oeNumber: part.oeNumber, partNameCn: part.partNameCn }
+      };
+    }
+
+    return { success: true, message: `OE号 ${oeNumber} 已提取，但未在本地配件目录中找到匹配`, oeNumber };
+  }
+
+  // Batch extract OE from filenames
+  async batchExtractOeFromFilenames(ids: number[]) {
+    let processed = 0;
+    let matched = 0;
+    let failed = 0;
+    const errors: string[] = [];
+
+    for (const id of ids) {
+      try {
+        const result = await this.extractOeFromFilename(id);
+        processed++;
+        if ((result as any).part) matched++;
+      } catch (e: any) {
+        failed++;
+        errors.push(`ID ${id}: ${e.message}`);
+      }
+    }
+
+    return { processed, matched, failed, errors: errors.length > 0 ? errors : undefined };
+  }
+  }
 
 const OE_PROVIDER_PRESETS: Record<string, { url: string; model: string }> = {
   zhipu:      { url: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: 'glm-4-flash' },

@@ -56,6 +56,7 @@ export class SettingsService {
         case 'ocr': return await this.testOcr(settings);
         case 'ai_recognition': return await this.testAiApi(settings, 'ai_recognition');
         case 'oe_lookup': return await this.testAiApi(settings, 'oe_lookup');
+        case 'baidu_translate': return await this.testBaiduTranslate(settings);
         default: return { success: false, message: `未知的测试类型: ${type}` };
       }
     } catch (error: any) {
@@ -269,4 +270,49 @@ export class SettingsService {
   private percentEncode(str: string): string {
     return encodeURIComponent(str).replace(/%20/g, '+').replace(/[!'()*]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
   }
+
+
+  // ---- Baidu Translate 测试 ----
+  private async testBaiduTranslate(settings: Record<string, string>): Promise<{ success: boolean; message: string }> {
+    const appid = settings.translate_api_appid;
+    const key = settings.translate_api_key;
+    
+    if (!appid || !key) {
+      return { success: false, message: '请填写百度翻译 APP ID 和密钥' };
+    }
+
+    try {
+      const salt = Math.floor(Math.random() * 90000 + 10000).toString();
+      const text = '测试';
+      const str = appid + text + salt + key;
+      const { createHash } = await import('crypto');
+      const sign = createHash('md5').update(str).digest('hex');
+
+      const params = new URLSearchParams({
+        q: text,
+        from: 'zh',
+        to: 'en',
+        appid: appid,
+        salt: salt,
+        sign: sign,
+      });
+
+      const response = await fetch('https://fanyi-api.baidu.com/api/trans/vip/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params,
+      });
+
+      const result = await response.json();
+      if (result.trans_result && result.trans_result.length > 0) {
+        return { success: true, message: `连接成功，翻译结果: ${result.trans_result[0].dst}` };
+      } else if (result.error_code) {
+        return { success: false, message: `错误: ${result.error_msg} (${result.error_code})` };
+      }
+      return { success: false, message: '未知错误' };
+    } catch (error: any) {
+      return { success: false, message: `连接失败: ${error.message}` };
+    }
+  }
+
 }

@@ -6,6 +6,7 @@ import { createClient } from 'webdav';
 import { Client as FtpClient } from 'basic-ftp';
 import path from 'path';
 import fs from 'fs/promises';
+import { createHash } from 'crypto';
 import { ImportSource } from './entities/import-source.entity';
 import { ImageAsset } from './entities/image-asset.entity';
 import { AssetClassification } from './entities/asset-classification.entity';
@@ -31,6 +32,62 @@ export class ImportSourcesService {
   private readonly logger = new Logger(ImportSourcesService.name);
   private isScanning = false;
   private stopFlags = new Map<number, boolean>();
+
+  private abortControllers = new Map<number, AbortController>();
+  private lastDownloadSpeed = 0;
+  private formatSpeed(bytesPerSecond: number): string {
+    if (bytesPerSecond === 0) return "计算中...";
+    if (bytesPerSecond < 1024) return bytesPerSecond.toFixed(0) + " B/s";
+    if (bytesPerSecond < 1024 * 1024) return (bytesPerSecond / 1024).toFixed(1) + " KB/s";
+    return (bytesPerSecond / 1024 / 1024).toFixed(1) + " MB/s";
+  }
+
+  // Force stop import
+  async forceStopImport(sourceId: number): Promise<{ message: string }> {
+    // Set stop flag
+    this.stopFlags.set(sourceId, true);
+    
+    // Abort any ongoing downloads
+    const controller = this.abortControllers.get(sourceId);
+    if (controller) {
+      controller.abort();
+      this.abortControllers.delete(sourceId);
+    }
+    
+    // Force update status in database
+    await this.sourceRepo.update(sourceId, {
+      status: 'idle',
+      errorMessage: '用户强制停止',
+    });
+    
+    return { message: '已发送停止信号' };
+  }
+
+
+  private progressClients = new Map<number, Set<(progress: any) => void>>();
+
+  // Subscribe to progress updates
+  subscribeProgress(sourceId: number, callback: (progress: any) => void): () => void {
+    if (!this.progressClients.has(sourceId)) {
+      this.progressClients.set(sourceId, new Set());
+    }
+    this.progressClients.get(sourceId)!.add(callback);
+    return () => {
+      const clients = this.progressClients.get(sourceId);
+      if (clients) {
+        clients.delete(callback);
+        if (clients.size === 0) this.progressClients.delete(sourceId);
+      }
+    };
+  }
+
+  private emitProgress(sourceId: number, progress: any) {
+    const clients = this.progressClients.get(sourceId);
+    if (clients) {
+      clients.forEach(cb => { try { cb(progress); } catch {} });
+    }
+  }
+
   private oeLookupCache = new Map<string, { partNameCn: string; partNameEn: string; brand: string; partType: string }>();
 
   constructor(
@@ -233,8 +290,22 @@ export class ImportSourcesService {
     }
 
     this.stopFlags.set(sourceId, true);
+    
+    // Abort any ongoing downloads
+    const controller = this.abortControllers.get(sourceId);
+    if (controller) {
+      controller.abort();
+      this.abortControllers.delete(sourceId);
+    }
+    
+    // Force update database status
+    await this.sourceRepo.update(sourceId, {
+      status: 'idle',
+      errorMessage: '用户停止导入',
+    });
+    
     this.logger.log(`[Import] Stop requested for source ${sourceId}`);
-    return { message: '正在停止导入...' };
+    return { message: '已停止导入' };
   }
 
   async getImportProgress(sourceId: number) {
@@ -245,6 +316,37 @@ export class ImportSourcesService {
       errorMessage: source.errorMessage,
       lastSyncAt: source.lastSyncAt,
     };
+  }
+
+  
+  // Concurrent batch download
+  private async downloadBatch(source: ImportSource, files: RemoteFile[], concurrency = 5): Promise<Array<{file: RemoteFile; buffer: Buffer | null; error: Error | null}>> {
+    const results: Array<{file: RemoteFile; buffer: Buffer | null; error: Error | null}> = [];
+    for (let i = 0; i < files.length; i += concurrency) {
+      const chunk = files.slice(i, i + concurrency);
+      const chunkResults = await Promise.all(chunk.map(async (file) => {
+        try {
+          const buffer = await this.downloadWithRetry(source, file.path, 2);
+          return { file, buffer, error: null };
+        } catch (err) {
+          return { file, buffer: null, error: err as Error };
+        }
+      }));
+      results.push(...chunkResults);
+    }
+    return results;
+  }
+
+
+  // Estimate remaining time
+  private estimateTimeLeft(processed: number, total: number, startTime: number): string {
+    if (processed === 0) return '计算中...';
+    const elapsed = (Date.now() - startTime) / 1000; // seconds
+    const rate = processed / elapsed;
+    const remaining = (total - processed) / rate;
+    const minutes = Math.floor(remaining / 60);
+    const seconds = Math.floor(remaining % 60);
+    return minutes > 0 ? `约${minutes}分${seconds}秒` : `约${seconds}秒`;
   }
 
   // ---- Main Import Logic ----
@@ -281,10 +383,15 @@ export class ImportSourcesService {
       let imported = 0;
       let skipped = 0;
       let errors = 0;
+      const startTime = Date.now();
+
+      // Create AbortController for this import session
+      const abortController = new AbortController();
+      this.abortControllers.set(sourceId, abortController);
 
       for (let i = 0; i < mediaFiles.length; i++) {
-        // Check stop flag
-        if (this.stopFlags.has(sourceId)) {
+        // Check stop flag or abort signal
+        if (this.stopFlags.has(sourceId) || abortController.signal.aborted) {
           this.stopFlags.delete(sourceId);
           this.logger.log(`[Import] Stopped by user for source ${sourceId}`);
           await this.sourceRepo.update(sourceId, {
@@ -299,33 +406,50 @@ export class ImportSourcesService {
         const file = mediaFiles[i];
         const isVideo = VIDEO_EXTENSIONS.has(path.extname(file.name).toLowerCase());
         try {
-          // Update progress with fileLog
-          await this.sourceRepo.update(sourceId, {
-            importProgress: { imported, skipped, errors, total: mediaFiles.length, currentFile: file.name, fileLog: fileLog.slice(-100) },
-          });
+          // Update progress with fileLog and diagnostic info
+          const downloadSpeed = this.lastDownloadSpeed || 0;
+          const progressData = {
+            imported, skipped, errors, total: mediaFiles.length,
+            currentFile: file.name,
+            currentFileSize: file.size,
+            currentFileIndex: i + 1,
+            lastActivityAt: new Date().toISOString(),
+            estimatedTimeLeft: this.estimateTimeLeft(imported + skipped + errors, mediaFiles.length, startTime),
+            downloadSpeed: downloadSpeed,
+            downloadSpeedText: this.formatSpeed(downloadSpeed),
+            fileLog: fileLog.slice(-100)
+          };
+          await this.sourceRepo.update(sourceId, { importProgress: progressData });
 
-          // Check if already imported: same fileName + same OE number = true duplicate
+          // Check if already imported: check by file name first
           const oeHint = file.oeHint;
-          if (oeHint) {
-            const dup = await this.assetRepo.findOne({ where: { fileName: file.name, recognizedOeNumber: oeHint } });
-            if (dup) {
-              skipped++;
-              fileLog.push({ name: file.name, oe: oeHint, status: 'skip', error: '' });
-              continue;
-            }
-          } else {
-            const dup = await this.assetRepo.findOne({ where: { fileName: file.name } });
-            if (dup) {
-              skipped++;
-              fileLog.push({ name: file.name, oe: '', status: 'skip', error: '' });
-              continue;
-            }
+          
+          // First check by filename (fast, no download needed)
+          const dupByName = oeHint
+            ? await this.assetRepo.findOne({ where: { fileName: file.name, recognizedOeNumber: oeHint } })
+            : await this.assetRepo.findOne({ where: { fileName: file.name } });
+          
+          if (dupByName) {
+            skipped++;
+            fileLog.push({ name: file.name, oe: oeHint || '', status: 'skip', error: 'filename duplicate' });
+            continue;
           }
 
           // Download file with retry
-          this.logger.log(`[Import] Downloading: ${file.name} (${file.size} bytes)`);
-          const buffer = await this.downloadWithRetry(source, file.path, 3);
+          this.logger.log(`[Import] Downloading: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB)`);
+          const buffer = await this.downloadWithRetry(source, file.path, 3, abortController.signal);
           this.logger.log(`[Import] Downloaded: ${file.name}, buffer size: ${buffer.length} bytes`);
+          
+          // Calculate MD5 for the downloaded buffer
+          const fileMd5 = createHash('md5').update(Buffer.from(buffer)).digest('hex');
+          
+          // Check by MD5 hash (only for records that have MD5)
+          const dupByMd5 = await this.assetRepo.findOne({ where: { fileMd5: fileMd5 } });
+          if (dupByMd5) {
+            skipped++;
+            fileLog.push({ name: file.name, oe: oeHint || '', status: 'skip', error: 'content duplicate (MD5 match)' });
+            continue;
+          }
 
           // Determine OE number: folder-level hint takes priority
           const nameWithoutExt = path.basename(file.name, path.extname(file.name));
@@ -340,7 +464,7 @@ export class ImportSourcesService {
           let recognitionStatus = isVideo ? 'skipped' : 'pending';
           let ocrStatus = isVideo ? 'skipped' : 'pending';
 
-          if (oeNumber && !isVideo) {
+          if (oeNumber) {
             recognizedOeNumber = oeNumber;
             const part = await this.partRepo.findOne({ where: { oeNumber } });
             if (part) {
@@ -350,22 +474,16 @@ export class ImportSourcesService {
               partNameCn = part.partNameCn || '';
               partNameEn = part.partNameEn || '';
               recognitionStatus = 'done';
-              ocrStatus = 'done';
+              ocrStatus = isVideo ? 'skipped' : 'done';
               if (!classificationId && part.category) {
                 const cls = await this.classRepo.findOne({ where: { name: part.category } });
                 if (cls) classificationId = cls.id;
               }
               this.logger.log(`[Import] OE match: ${file.name} → ${part.oeNumber} (${partNameCn})`);
             } else {
-              this.logger.log(`[Import] OE detected (${oeNumber}), looking up via AI: ${file.name}`);
-              const aiResult = await this.lookupPartNameByOE(oeNumber);
-              if (aiResult) {
-                partNameCn = aiResult.partNameCn;
-                partNameEn = aiResult.partNameEn;
-                recognizedBrand = aiResult.brand;
-                recognizedPartType = aiResult.partType;
-                this.logger.log(`[Import] AI lookup: ${oeNumber} → ${partNameCn} / ${partNameEn}`);
-              }
+              // OE number detected but not in local catalog - skip AI lookup during import
+              this.logger.log(`[Import] OE detected (${oeNumber}) but not in local catalog: ${file.name}`);
+              // User can manually lookup later
             }
           }
 
@@ -396,6 +514,7 @@ export class ImportSourcesService {
             type: isVideo ? 'video' : 'image',
             filePath: saved.filePath,
             fileName: saved.fileName,
+            fileMd5: fileMd5,
             fileSize: file.size,
             width: saved.width,
             height: saved.height,
@@ -416,7 +535,7 @@ export class ImportSourcesService {
           await this.assetRepo.save(asset);
 
           // Background OCR/AI for non-OE image files only
-          if (!partId && !isVideo) {
+          if (!partId && !isVideo && source.autoRecognize) {
             this.processInBackground(asset.id, saved.filePath, source.folderMapping);
           }
 
@@ -578,11 +697,28 @@ export class ImportSourcesService {
   }
 
   // ---- Download with Retry ----
-  private async downloadWithRetry(source: ImportSource, filePath: string, maxRetries: number): Promise<Buffer> {
+  private async downloadWithRetry(source: ImportSource, filePath: string, maxRetries: number, abortSignal?: AbortSignal): Promise<Buffer> {
     let lastError: Error | null = null;
+    const isVideo = ['.mp4', '.webm', '.mov', '.avi', '.mkv'].some(ext => 
+      filePath.toLowerCase().endsWith(ext)
+    );
+    const downloadTimeout = isVideo ? 900000 : 60000; // 15 min for videos, 1 min for images
+    
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      // Check if aborted before each attempt
+      if (abortSignal?.aborted) {
+        throw new Error('Download aborted by user');
+      }
+      
       try {
-        return await this.downloadFile(source, filePath);
+        const downloadStart = Date.now();
+        const result = await this.downloadWithTimeout(source, filePath, downloadTimeout);
+        const downloadEnd = Date.now();
+        const downloadDuration = (downloadEnd - downloadStart) / 1000; // seconds
+        if (downloadDuration > 0 && result) {
+          this.lastDownloadSpeed = result.length / downloadDuration;
+        }
+        return result;
       } catch (err) {
         lastError = err;
         this.logger.warn(`[Download] Attempt ${attempt}/${maxRetries} failed for ${filePath}: ${err.message}`);
@@ -592,6 +728,25 @@ export class ImportSourcesService {
       }
     }
     throw lastError;
+  }
+
+
+  // Download with Timeout
+  private async downloadWithTimeout(source: ImportSource, filePath: string, timeout: number): Promise<Buffer> {
+    return new Promise(async (resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`Download timeout after ${timeout}ms`));
+      }, timeout);
+      
+      try {
+        const buffer = await this.downloadFile(source, filePath);
+        clearTimeout(timer);
+        resolve(buffer);
+      } catch (err) {
+        clearTimeout(timer);
+        reject(err);
+      }
+    });
   }
 
   private async downloadFile(source: ImportSource, filePath: string): Promise<Buffer> {
@@ -606,10 +761,15 @@ export class ImportSourcesService {
         });
         const stream = client.createReadStream(filePath);
         const chunks: Buffer[] = [];
+        const downloadTimeout = 60000; // 60 seconds timeout per file
         return new Promise((resolve, reject) => {
+          const timer = setTimeout(() => {
+            stream.destroy();
+            reject(new Error('Download timeout'));
+          }, downloadTimeout);
           stream.on('data', (chunk: Buffer) => chunks.push(chunk));
-          stream.on('end', () => resolve(Buffer.concat(chunks)));
-          stream.on('error', reject);
+          stream.on('end', () => { clearTimeout(timer); resolve(Buffer.concat(chunks)); });
+          stream.on('error', (err) => { clearTimeout(timer); reject(err); });
         });
       }
       case 'ftp': {
@@ -646,7 +806,13 @@ export class ImportSourcesService {
 
     // Strip trailing image sequence suffix: -1, -2, _1, _2, (1), (2), etc.
     // e.g., "54610-2E100-1" → "54610-2E100", "97674-1J000_3" → "97674-1J000"
-    const stripped = upper.replace(/[-_]\d{1,2}$/, '');
+    // e.g., "21355-3C530(2)" → "21355-3C530"
+    // e.g., "18846-11070原厂" → "18846-11070"
+    const stripped = upper
+      .replace(/[-_]\d{1,2}$/, '')
+      .replace(/\(\d+\)$/, '')
+      .replace(/[一-龥]+$/, '')  // Remove trailing Chinese characters
+      .trim();
 
     // Try matching on stripped version (preserves hyphens within OE)
     // Hyundai/Kia: 54610-2E100, 97674-1J000, 54610-AB100
@@ -786,11 +952,15 @@ export class ImportSourcesService {
     try {
       const prompt = `你是汽车配件OE号码查询专家。请根据OE号码 "${oeNumber}" 查询对应的配件信息。返回严格JSON：{"partNameCn":"中文名","partNameEn":"英文名","brand":"品牌","partType":"类型"}。只返回JSON。`;
 
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000); // 10 second timeout
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
         body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], max_tokens: 512, temperature: 0.1 }),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
 
       const data = await response.json();
       const text = data.choices?.[0]?.message?.content || '{}';

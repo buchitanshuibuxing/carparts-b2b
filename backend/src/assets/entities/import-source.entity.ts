@@ -29,6 +29,9 @@ export class ImportSource {
   @Column({ name: 'auto_classify', default: true })
   autoClassify: boolean;
 
+  @Column({ name: "auto_recognize", default: false })
+  autoRecognize: boolean; // Auto OCR/AI recognition on import
+
   @Column({ name: 'folder_mapping', type: 'jsonb', default: {} })
   folderMapping: Record<string, number>;
 

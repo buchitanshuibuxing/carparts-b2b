@@ -6,6 +6,7 @@ import { ImageProcessingService } from './image-processing.service';
 import { ImageRecognitionService } from './image-recognition.service';
 import { OcrService } from './ocr.service';
 import { ImportSourcesService } from './import-sources.service';
+import { ImportGateway } from './import.gateway';
 import { ImageAsset } from './entities/image-asset.entity';
 import { AssetTag } from './entities/asset-tag.entity';
 import { AssetClassification } from './entities/asset-classification.entity';
@@ -16,7 +17,7 @@ import { SettingsModule } from '../settings/settings.module';
 @Module({
   imports: [TypeOrmModule.forFeature([ImageAsset, AssetTag, AssetClassification, ImportSource, Part]), SettingsModule],
   controllers: [AssetsController],
-  providers: [AssetsService, ImageProcessingService, ImageRecognitionService, OcrService, ImportSourcesService],
+  providers: [AssetsService, ImageProcessingService, ImageRecognitionService, OcrService, ImportSourcesService, ImportGateway],
   exports: [AssetsService],
 })
 export class AssetsModule {}

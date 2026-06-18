@@ -82,11 +82,20 @@ export class PartsController {
     return this.partsService.remove(id);
   }
 
-  // ---- Classifications ----
+  // ---- Batch operations ----
 
   @Post("batch-delete")
   @RequirePermission('parts', 'delete')
   batchDelete(@Body() body: { ids: number[] }) {
     return this.partsService.batchDelete(body.ids);
+  }
+
+  @Post("batch-translate")
+  @RequirePermission("parts", "edit")
+  async batchTranslate(@Body() body: { ids?: number[] }) {
+    console.log('[Controller] batchTranslate called with ids:', body.ids?.length || 'undefined');
+    const result = await this.partsService.batchTranslate(body.ids);
+    console.log('[Controller] batchTranslate result:', JSON.stringify(result));
+    return result;
   }
 }

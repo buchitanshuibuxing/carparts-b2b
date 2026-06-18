@@ -14,6 +14,9 @@ export class ImageAsset {
   @Column({ name: 'file_name' })
   fileName: string;
 
+  @Column({ name: 'file_md5', length: 32, nullable: true })
+  fileMd5: string;
+
   @Column({ name: 'file_size', default: 0 })
   fileSize: number;
 
