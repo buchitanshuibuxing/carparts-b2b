@@ -360,23 +360,33 @@ export class OrdersService {
   }
 
   async getStats(dateFrom?: string, dateTo?: string) {
-    const totalOrders = await this.orderRepo.count();
-    const pendingOrders = await this.orderRepo.count({ where: { status: 'pending' } });
-    const confirmedOrders = await this.orderRepo.count({ where: { status: 'confirmed' } });
-    const shippedOrders = await this.orderRepo.count({ where: { status: 'shipped' } });
-    const completedOrders = await this.orderRepo.count({ where: { status: 'completed' } });
-    const cancelledOrders = await this.orderRepo.count({ where: { status: 'cancelled' } });
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-    const monthOrders = await this.orderRepo.createQueryBuilder('o')
-      .where('o.order_date >= :s', { s: monthStart }).andWhere('o.status != :c', { c: 'cancelled' }).getCount();
-    const monthRevenue = await this.orderRepo.createQueryBuilder('o')
-      .select('COALESCE(SUM(o.total_amount), 0)', 'total')
-      .where('o.order_date >= :s', { s: monthStart }).andWhere('o.status != :c', { c: 'cancelled' }).getRawOne();
+
+    // 合并为单条 SQL 查询，减少数据库往返
+    const stats = await this.orderRepo.createQueryBuilder('o')
+      .select([
+        'COUNT(*) as total_orders',
+        'COUNT(CASE WHEN o.status = \'pending\' THEN 1 END) as pending_orders',
+        'COUNT(CASE WHEN o.status = \'confirmed\' THEN 1 END) as confirmed_orders',
+        'COUNT(CASE WHEN o.status = \'shipped\' THEN 1 END) as shipped_orders',
+        'COUNT(CASE WHEN o.status = \'completed\' THEN 1 END) as completed_orders',
+        'COUNT(CASE WHEN o.status = \'cancelled\' THEN 1 END) as cancelled_orders',
+        'COUNT(CASE WHEN o.order_date >= :monthStart AND o.status != \'cancelled\' THEN 1 END) as current_month_total',
+        'COALESCE(SUM(CASE WHEN o.order_date >= :monthStart AND o.status != \'cancelled\' THEN o.total_amount ELSE 0 END), 0) as current_month_revenue',
+      ])
+      .setParameters({ monthStart })
+      .getRawOne();
+
     return {
-      total_orders: totalOrders, pending_orders: pendingOrders, confirmed_orders: confirmedOrders,
-      shipped_orders: shippedOrders, completed_orders: completedOrders, cancelled_orders: cancelledOrders,
-      current_month_total: monthOrders, current_month_revenue: Number(monthRevenue?.total || 0),
+      total_orders: Number(stats?.total_orders || 0),
+      pending_orders: Number(stats?.pending_orders || 0),
+      confirmed_orders: Number(stats?.confirmed_orders || 0),
+      shipped_orders: Number(stats?.shipped_orders || 0),
+      completed_orders: Number(stats?.completed_orders || 0),
+      cancelled_orders: Number(stats?.cancelled_orders || 0),
+      current_month_total: Number(stats?.current_month_total || 0),
+      current_month_revenue: Number(stats?.current_month_revenue || 0),
     };
   }
 
