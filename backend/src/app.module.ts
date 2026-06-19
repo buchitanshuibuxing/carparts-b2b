@@ -37,6 +37,14 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
       entities: [__dirname + '/**/*.entity{.ts,.js}'],
       synchronize: false,
       logging: process.env.NODE_ENV !== 'production',
+      // 连接池配置
+      extra: {
+        max: 20,           // 最大连接数
+        min: 5,            // 最小连接数
+        acquireTimeoutMillis: 30000,  // 获取连接超时
+        idleTimeoutMillis: 60000,     // 空闲连接超时
+        connectionLimit: 20,          // 连接限制
+      },
     }),
     ScheduleModule.forRoot(),
     ServeStaticModule.forRoot({

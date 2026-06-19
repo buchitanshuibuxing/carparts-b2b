@@ -322,15 +322,11 @@ export default function Settings() {
                               const formData = new FormData();
                               formData.append('file', file);
                               try {
-                                const { data } = await api.post('/assets/upload', formData, {
+                                const { data } = await api.post('/settings/upload', formData, {
                                   headers: { 'Content-Type': 'multipart/form-data' },
                                 });
-                                const asset = data.data || data;
-                                // filePath 是相对路径，需要构建完整 URL
-                                const filePath = asset.filePath || asset.file_path;
-                                if (filePath) {
-                                  // 构建完整 URL: /uploads/xxx.png
-                                  const url = filePath.startsWith('/') ? filePath : `/uploads/${filePath}`;
+                                const url = data.data?.url || data.url;
+                                if (url) {
                                   set('company_logo_url', url);
                                   success('上传成功，点击保存后生效');
                                 }

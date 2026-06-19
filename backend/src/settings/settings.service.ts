@@ -315,4 +315,29 @@ export class SettingsService {
     }
   }
 
+  // ---- 文件上传（设置专用，不保存到素材库）----
+  async uploadFile(file: Express.Multer.File): Promise<{ url: string }> {
+    const { v4: uuidv4 } = await import('uuid');
+    const path = await import('path');
+    const fs = await import('fs');
+
+    // 生成唯一文件名
+    const ext = path.extname(file.originalname) || '.png';
+    const filename = `setting_${uuidv4()}${ext}`;
+    const datePath = new Date().toISOString().slice(0, 7).replace('-', '/');
+    const relativePath = `settings/${datePath}/${filename}`;
+    const absolutePath = path.join(process.cwd(), '..', 'uploads', relativePath);
+
+    // 确保目录存在
+    const dir = path.dirname(absolutePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    // 保存文件
+    fs.writeFileSync(absolutePath, file.buffer);
+
+    return { url: `/uploads/${relativePath}` };
+  }
+
 }
