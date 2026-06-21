@@ -176,7 +176,7 @@ export default function OrderDetail() {
       await api.post(`/orders/${id}/items`, {
         part_id: part.id, quantity: 1, unit_price: priceData.price || 0, allow_negative: allowNegative,
       });
-      setShowAddItem(false);
+      // Don't hide the search box, allow continuous adding
       fetchOrder();
     } catch (err: any) { error(err.response?.data?.message || '添加失败'); }
   };
