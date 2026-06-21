@@ -335,7 +335,16 @@ export default function Quotations() {
   };
 
   const openCreate = () => {
-    setEditId(null); setForm(emptyForm);
+    setEditId(null);
+    // 从 localStorage 读取上次保存的装运港、目的港、交货期
+    const savedDefaults = localStorage.getItem('quotation_defaults');
+    const defaults = savedDefaults ? JSON.parse(savedDefaults) : {};
+    setForm({
+      ...emptyForm,
+      port_loading: defaults.port_loading || '',
+      port_dest: defaults.port_dest || '',
+      delivery_time: defaults.delivery_time || '',
+    });
     setPaymentStages([
       { method: 'T/T', percent: 30, description: 'Deposit' },
       { method: 'T/T', percent: 70, description: 'Before shipment' },
@@ -445,6 +454,12 @@ export default function Quotations() {
       if (savedQuotation?.quotationNumber) {
         success(`报价单已保存: ${savedQuotation.quotationNumber}`);
       }
+      // 保存装运港、目的港、交货期到 localStorage
+      localStorage.setItem('quotation_defaults', JSON.stringify({
+        port_loading: form.port_loading,
+        port_dest: form.port_dest,
+        delivery_time: form.delivery_time,
+      }));
       setViewMode('list');
       fetchQuotations();
     } catch (err: any) { error(err.response?.data?.message || '保存失败'); }
