@@ -396,6 +396,8 @@ export default function Quotations() {
       })));
       setUseExistingCustomer(false);
       setCustomerSearch(qt.buyerCompany || '');
+      // Set the current quotation number for editing
+      setNextQuotationNumber(qt.quotationNumber || '');
       setViewMode('form');
     } catch (err: any) { error(err.response?.data?.message || '加载失败'); }
   };
