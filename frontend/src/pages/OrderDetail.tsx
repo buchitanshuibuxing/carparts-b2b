@@ -9,6 +9,9 @@ import { Select } from '@/components/ui/Select';
 import { PartPicker, type PartOption } from '@/components/ui/PartPicker';
 import { useToast } from '@/components/ui/Toast';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
+
+const PACKAGE_OPTIONS = ['盒', '箱', '袋', '包', '件', '套', '个', '只', '对', '片', '卷', '桶', '罐'];
+
 const DEFAULT_orderStatusesES: Record<string, { label: string; color: string }> = {
   pending: { label: '待确认', color: 'yellow' },
   confirmed: { label: '已确认', color: 'blue' },
@@ -72,7 +75,7 @@ export default function OrderDetail() {
 
   // Item inline edit
   const [editingItemId, setEditingItemId] = useState<number | null>(null);
-  const [editItem, setEditItem] = useState({ quantity: '', unit_price: '', discount_pct: '' });
+  const [editItem, setEditItem] = useState({ quantity: '', unit_price: '', discount_pct: '', package_name: '' });
 
   // Add item
   const [showAddItem, setShowAddItem] = useState(false);
@@ -147,7 +150,7 @@ export default function OrderDetail() {
 
   const startEditItem = (item: OrderItem) => {
     setEditingItemId(item.id);
-    setEditItem({ quantity: String(item.quantity), unit_price: String(item.unitPrice), discount_pct: String(item.discountPct) });
+    setEditItem({ quantity: String(item.quantity), unit_price: String(item.unitPrice), discount_pct: String(item.discountPct), package_name: item.packageName || '' });
   };
 
   const saveItem = async (itemId: number) => {
@@ -156,6 +159,7 @@ export default function OrderDetail() {
         quantity: Number(editItem.quantity),
         unit_price: Number(editItem.unit_price),
         discount_pct: Number(editItem.discount_pct),
+        package_name: editItem.package_name,
       });
       setEditingItemId(null);
       fetchOrder();
@@ -483,6 +487,13 @@ export default function OrderDetail() {
                     <td className="px-4 py-3 text-gray-500">{item.packageName || '-'}</td>
                     {editingItemId === item.id ? (
                       <>
+                        <td className="px-4 py-2">
+                          <select value={editItem.package_name} onChange={(e) => setEditItem({ ...editItem, package_name: e.target.value })}
+                            className="w-20 rounded border px-1 py-1 text-xs">
+                            <option value="">-</option>
+                            {PACKAGE_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
+                          </select>
+                        </td>
                         <td className="px-4 py-2 text-right">
                           <input type="number" min="1" className="w-16 rounded border px-1.5 py-1 text-right text-sm" value={editItem.quantity} onChange={(e) => setEditItem({ ...editItem, quantity: e.target.value })} autoFocus onKeyDown={(e) => { if (e.key === 'Enter') saveItem(item.id); if (e.key === 'Escape') setEditingItemId(null); }} />
                         </td>

@@ -165,7 +165,7 @@ export class OrdersService {
     return this.orderRepo.save(order);
   }
 
-  async updateItem(itemId: number, data: { quantity?: number; unit_price?: number; discount_pct?: number }) {
+  async updateItem(itemId: number, data: { quantity?: number; unit_price?: number; discount_pct?: number; package_name?: string }) {
     const item = await this.itemRepo.findOne({ where: { id: itemId } });
     if (!item) throw new NotFoundException('订单项不存在');
 
@@ -193,6 +193,7 @@ export class OrdersService {
 
     if (data.unit_price !== undefined) item.unitPrice = data.unit_price;
     if (data.discount_pct !== undefined) item.discountPct = data.discount_pct;
+    if (data.package_name !== undefined) item.packageName = data.package_name;
 
     item.subtotal = item.quantity * Number(item.unitPrice) * (1 - Number(item.discountPct) / 100);
     await this.itemRepo.save(item);

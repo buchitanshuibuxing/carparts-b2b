@@ -174,22 +174,37 @@ export class QuotationsService {
       const key = map[k] || k;
       if (v !== undefined) (q as any)[key] = v;
     }
-    // Recalculate totalAmount if items or shipping_cost changed
-    if (data.items || data.shipping_cost !== undefined) {
-      let subtotal = 0;
-      if (data.items) {
-        for (const item of data.items) {
-          subtotal += (item.quantity || 0) * (item.unit_price || 0);
-        }
-      } else {
-        // Use existing items
-        const existingItems = await this.itemRepo.find({ where: { quotationId: id } });
-        for (const item of existingItems) {
-          subtotal += Number(item.subtotal) || 0;
-        }
+
+    // Update items if provided
+    if (data.items) {
+      // Delete existing items
+      await this.itemRepo.delete({ quotationId: id } as any);
+      // Create new items
+      for (const item of data.items) {
+        const subtotal = (item.quantity || 0) * (item.unit_price || 0);
+        await this.itemRepo.save({
+          quotationId: id, partId: item.part_id,
+          oeNumber: item.oe_number || '', partName: item.part_name || '',
+          quantity: item.quantity, unitPrice: item.unit_price || 0, subtotal,
+          brand: item.brand || '', packageName: item.package_name || '', unit: item.unit || 'pcs',
+        });
       }
-      q.totalAmount = subtotal + (Number(q.shippingCost) || 0);
     }
+
+    // Recalculate totalAmount
+    let subtotal = 0;
+    if (data.items) {
+      for (const item of data.items) {
+        subtotal += (item.quantity || 0) * (item.unit_price || 0);
+      }
+    } else {
+      const existingItems = await this.itemRepo.find({ where: { quotationId: id } });
+      for (const item of existingItems) {
+        subtotal += Number(item.subtotal) || 0;
+      }
+    }
+    q.totalAmount = subtotal + (Number(q.shippingCost) || 0);
+
     return this.quotationRepo.save(q);
   }
 
