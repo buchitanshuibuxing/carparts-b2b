@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
@@ -12,13 +12,22 @@ interface Props {
 
 export function Modal({ isOpen, onClose, title, children, size = 'md' }: Props) {
   const contentRef = useRef<HTMLDivElement>(null);
+  const hasFocused = useRef(false);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      hasFocused.current = false;
+      return;
+    }
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', handler);
-    // Focus the modal content when opened
-    setTimeout(() => contentRef.current?.focus(), 100);
+    // Only focus modal content on initial open, not on re-renders
+    if (!hasFocused.current) {
+      setTimeout(() => {
+        contentRef.current?.focus();
+        hasFocused.current = true;
+      }, 100);
+    }
     return () => document.removeEventListener('keydown', handler);
   }, [isOpen, onClose]);
 
