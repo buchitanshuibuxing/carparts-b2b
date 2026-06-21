@@ -10,7 +10,7 @@ import { PartPicker, type PartOption } from '@/components/ui/PartPicker';
 import { useToast } from '@/components/ui/Toast';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 
-const PACKAGE_OPTIONS = ['盒', '箱', '袋', '包', '件', '套', '个', '只', '对', '片', '卷', '桶', '罐'];
+const PACKAGE_OPTIONS = ['Hyundai', 'KIA', 'Mobis', 'Other'];
 
 const DEFAULT_orderStatusesES: Record<string, { label: string; color: string }> = {
   pending: { label: '待确认', color: 'yellow' },
