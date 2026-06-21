@@ -484,7 +484,6 @@ export default function OrderDetail() {
                     <td className="px-4 py-3 font-mono text-blue-600">{item.part?.oeNumber || `#${item.partId}`}</td>
                     <td className="px-4 py-3">{item.part?.partNameCn || '-'}</td>
                     <td className="px-4 py-3 text-gray-500">{item.part?.brand || '-'}</td>
-                    <td className="px-4 py-3 text-gray-500">{item.packageName || '-'}</td>
                     {editingItemId === item.id ? (
                       <>
                         <td className="px-4 py-2">
@@ -513,6 +512,7 @@ export default function OrderDetail() {
                       </>
                     ) : (
                       <>
+                        <td className="px-4 py-3 text-gray-500 cursor-pointer hover:bg-blue-50" onClick={() => isPending && startEditItem(item)} title={isPending ? '点击编辑' : ''}>{item.packageName || '-'}</td>
                         <td className="px-4 py-3 text-right cursor-pointer hover:bg-blue-50" onClick={() => isPending && startEditItem(item)} title={isPending ? '点击编辑' : ''}>{item.quantity}</td>
                         <td className="px-4 py-3 text-right font-mono cursor-pointer hover:bg-blue-50" onClick={() => isPending && startEditItem(item)} title={isPending ? '点击编辑' : ''}>{Number(item.unitPrice).toFixed(2)}</td>
                         <td className="px-4 py-3 text-right cursor-pointer hover:bg-blue-50" onClick={() => isPending && startEditItem(item)} title={isPending ? '点击编辑' : ''}>{item.discountPct}%</td>
