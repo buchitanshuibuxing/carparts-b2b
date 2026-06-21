@@ -269,6 +269,7 @@ export default function Quotations() {
         seller_phone: s.seller_phone || '',
         seller_email: s.seller_email || '',
         seller_address: s.seller_address || '',
+        logo_url: s.seller_logo_url || '',
       }));
     } catch { /* ignore */ }
   };

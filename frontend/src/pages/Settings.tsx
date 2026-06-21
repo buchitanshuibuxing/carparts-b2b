@@ -388,12 +388,58 @@ export default function Settings() {
                 ].map(({ key, label, placeholder }) => (
                   <Input key={key} label={label} value={get(key)} placeholder={placeholder} onChange={(e) => set(key, e.target.value)} />
                 ))}
+
+                {/* 公司 Logo */}
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">公司 Logo</label>
+                  <div className="flex items-start gap-4">
+                    <div className="flex-shrink-0 w-24 h-24 border-2 border-dashed border-gray-200 rounded-xl flex items-center justify-center bg-gray-50 overflow-hidden">
+                      {get('seller_logo_url') ? (
+                        <img src={get('seller_logo_url')} alt="Logo" className="w-full h-full object-contain" />
+                      ) : (
+                        <div className="text-center">
+                          <div className="text-gray-300 text-3xl">🏢</div>
+                          <p className="text-[10px] text-gray-400 mt-1">无 Logo</p>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 space-y-2">
+                      <div className="flex gap-2">
+                        <label className="flex-1 cursor-pointer">
+                          <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const formData = new FormData();
+                            formData.append('file', file);
+                            try {
+                              const { data } = await api.post('/settings/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+                              const url = data.data?.url || data.url;
+                              if (url) { set('seller_logo_url', url); success('上传成功，点击保存后生效'); }
+                            } catch { showError('上传失败'); }
+                          }} />
+                          <div className="flex items-center justify-center gap-2 px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-sm text-gray-600">
+                            上传图片
+                          </div>
+                        </label>
+                        {get('seller_logo_url') && (
+                          <button onClick={() => set('seller_logo_url', '')} className="px-3 py-2 border border-gray-200 rounded-lg hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition-colors text-sm text-gray-500">
+                            清除
+                          </button>
+                        )}
+                      </div>
+                      <input type="text" value={get('seller_logo_url')} onChange={e => set('seller_logo_url', e.target.value)} placeholder="或输入 Logo URL" className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-blue-200" />
+                      <p className="text-xs text-gray-400">建议尺寸 200x60 像素，支持 PNG/JPG/SVG</p>
+                    </div>
+                  </div>
+                </div>
+
                 <Button onClick={() => handleSaveAll({
                   seller_company: get('seller_company'),
                   seller_contact: get('seller_contact'),
                   seller_phone: get('seller_phone'),
                   seller_email: get('seller_email'),
                   seller_address: get('seller_address'),
+                  seller_logo_url: get('seller_logo_url'),
                 })} disabled={saving}>
                   <Save className="h-4 w-4 mr-1" />保存卖方信息
                 </Button>
