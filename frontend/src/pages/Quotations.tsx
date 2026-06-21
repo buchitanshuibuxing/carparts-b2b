@@ -125,7 +125,7 @@ const DEFAULT_qStatus: Record<string, { label: string; color: string }> = {
 
 const TRADE_TERMS = ['FOB', 'CIF', 'CFR', 'EXW', 'DDP', 'DAP'];
 const PAYMENT_METHODS = ['T/T', 'L/C', 'D/P', 'Western Union', 'PayPal', 'Cash'];
-const DEFAULT_PACKAGE_OPTIONS = ['Hyundai', 'KIA', 'Mobis', 'Other'];
+const DEFAULT_PACKAGE_OPTIONS = ['盒', '箱', '袋', '包', '件', '套', '个', '只', '对', '片', '卷', '桶', '罐'];
 const UNIT_OPTIONS = ['pcs', 'sets', 'pairs', 'rolls', 'kg', 'cartons'];
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
