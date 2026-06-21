@@ -739,7 +739,7 @@ export default function Quotations() {
             <div className="p-3 rounded" style={{ background: '#f9fafb' }}>
               <p className="text-xs font-bold mb-2" style={{ color: '#2563eb', letterSpacing: '1px' }}>PAYMENT TERMS</p>
               {q.paymentStages.map((s: PaymentStage, i: number) => (
-                <p key={i} className="text-xs text-gray-700 mb-1">{s.method} {s.percent}% ({sym}{(docSubtotal * (s.percent || 0) / 100).toFixed(2)}) - {s.description}</p>
+                <p key={i} className="text-xs text-gray-700 mb-1">{s.method} {s.percent}% ({sym}{(Number(q.totalAmount) * (s.percent || 0) / 100).toFixed(2)}) - {s.description}</p>
               ))}
             </div>
           )}
@@ -1064,7 +1064,7 @@ export default function Quotations() {
                           onChange={(e) => updateStage(idx, 'percent', Number(e.target.value))}
                           className="w-16 rounded-lg border border-gray-200 bg-gray-50/50 px-2 py-1.5 text-right text-sm focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400" />
                         <span className="text-sm text-gray-500">%</span>
-                        <span className="text-xs text-blue-600 font-mono">({form.currency} {(items.reduce((s, i) => s + i.quantity * i.unit_price, 0) * (stage.percent || 0) / 100).toFixed(2)})</span>
+                        <span className="text-xs text-blue-600 font-mono">({form.currency} {(totalAmount * (stage.percent || 0) / 100).toFixed(2)})</span>
                       </div>
                       <input type="text" value={stage.description} placeholder="说明"
                         onChange={(e) => updateStage(idx, 'description', e.target.value)}
