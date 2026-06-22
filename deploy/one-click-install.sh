@@ -336,14 +336,18 @@ esac
 EOF
 chmod +x /usr/local/bin/carparts
 
-# 22. 保存部署信息
+# 22. 获取外网 IP
+print_info "获取外网 IP..."
+PUBLIC_IP=$(curl -s ifconfig.me || curl -s ipinfo.io/ip || curl -s api.ipify.org || echo "无法获取")
+
+# 23. 保存部署信息
 cat > deploy-info.txt << EOF
 CarParts B2B 部署信息
 ====================
 
 部署时间: $(date)
-服务器 IP: $(hostname -I | awk '{print $1}')
-访问地址: http://$(hostname -I | awk '{print $1}')
+服务器 IP: $PUBLIC_IP
+访问地址: http://$PUBLIC_IP
 
 管理员账号: admin
 管理员密码: $ADMIN_PASSWORD
@@ -371,7 +375,7 @@ echo "=========================================="
 print_success "部署完成！"
 echo "=========================================="
 echo ""
-echo "访问地址: http://$(hostname -I | awk '{print $1}')"
+echo "访问地址: http://$PUBLIC_IP"
 echo "管理员:   admin"
 echo "密码:     $ADMIN_PASSWORD"
 echo ""
