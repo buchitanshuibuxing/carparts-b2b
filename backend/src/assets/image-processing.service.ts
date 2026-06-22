@@ -20,7 +20,13 @@ export interface VideoMetadata {
 @Injectable()
 export class ImageProcessingService {
   private readonly logger = new Logger(ImageProcessingService.name);
-  private readonly uploadDir = process.env.UPLOAD_DIR || './uploads';
+  private readonly uploadDir: string;
+
+  constructor() {
+    // 延迟读取环境变量，确保 ConfigModule 已加载
+    this.uploadDir = process.env.UPLOAD_DIR || './uploads';
+    this.logger.log(`Upload directory: ${this.uploadDir}`);
+  }
 
   async ensureDirs() {
     const dirs = [
