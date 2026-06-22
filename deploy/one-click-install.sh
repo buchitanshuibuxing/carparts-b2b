@@ -5,8 +5,6 @@
 # 用法: curl -sL https://raw.githubusercontent.com/buchitanshuibuxing/carparts-b2b/main/deploy/one-click-install.sh | bash
 # ============================================================
 
-set -e
-
 # 设置非交互模式，避免提示
 export DEBIAN_FRONTEND=noninteractive
 export NEEDRESTART_MODE=a
@@ -78,24 +76,43 @@ print_success "PostgreSQL 已安装"
 
 # 6. 配置数据库
 print_info "配置数据库..."
-cd /tmp
-sudo -u postgres psql -c "CREATE DATABASE $DB_NAME;" 2>/dev/null || true
-sudo -u postgres psql -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASSWORD';" 2>/dev/null || true
-sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;" 2>/dev/null || true
-sudo -u postgres psql -c "ALTER USER $DB_USER WITH SUPERUSER;" 2>/dev/null || true
+
+# 创建数据库
+print_info "创建数据库..."
+sudo -u postgres psql -c "CREATE DATABASE $DB_NAME;" || print_warning "数据库可能已存在"
+
+# 创建用户
+print_info "创建用户..."
+sudo -u postgres psql -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASSWORD';" || print_warning "用户可能已存在"
+
+# 授权
+print_info "授权..."
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;"
+sudo -u postgres psql -c "ALTER USER $DB_USER WITH SUPERUSER;"
 
 # 配置 pg_hba.conf
-PG_VERSION=$(cd /tmp && sudo -u postgres psql -t -c "SHOW server_version;" | grep -oP '^\d+')
+print_info "配置 pg_hba.conf..."
+PG_VERSION=$(sudo -u postgres psql -t -c "SELECT version();" | grep -oP 'PostgreSQL \K\d+')
+print_info "PostgreSQL 版本: $PG_VERSION"
+
 PG_HBA="/etc/postgresql/$PG_VERSION/main/pg_hba.conf"
+print_info "pg_hba.conf 路径: $PG_HBA"
+
 if [ -f "$PG_HBA" ]; then
+    print_info "pg_hba.conf 存在，检查配置..."
     if ! grep -q "$DB_USER" "$PG_HBA"; then
+        print_info "添加 $DB_USER 到 pg_hba.conf..."
         echo "local   all   $DB_USER   md5" | sudo tee -a "$PG_HBA"
         echo "host    all   $DB_USER   127.0.0.1/32   md5" | sudo tee -a "$PG_HBA"
+    else
+        print_info "$DB_USER 已在 pg_hba.conf 中"
     fi
+    print_info "重启 PostgreSQL..."
     sudo systemctl restart postgresql
 else
     print_warning "pg_hba.conf 未找到，跳过配置"
 fi
+
 print_success "数据库配置完成"
 
 # 7. 安装 Nginx
