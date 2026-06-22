@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import path from 'path';
@@ -29,6 +30,7 @@ export class AssetsService {
     private ocrService: OcrService,
     private recognitionService: ImageRecognitionService,
     private settingsSvc: SettingsService,
+    private configService: ConfigService,
   ) {}
 
   // ---- OE Number Extraction ----
@@ -712,7 +714,7 @@ export class AssetsService {
   }
 
   private async deleteAssetFiles(asset: ImageAsset) {
-    const uploadDir = process.env.UPLOAD_DIR || './uploads';
+    const uploadDir = this.configService.get<string>('UPLOAD_DIR') || './uploads';
     const filesToDelete = [asset.filePath, asset.thumbnailSmallPath, asset.thumbnailMediumPath, asset.thumbnailLargePath].filter(Boolean);
     for (const f of filesToDelete) {
       try { await fs.unlink(path.join(uploadDir, f)); } catch {}
