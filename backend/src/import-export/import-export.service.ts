@@ -98,7 +98,7 @@ export class ImportExportService {
     const ws = XLSX.utils.aoa_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, importType);
-    const uploadDir = process.env.UPLOAD_DEST || './uploads';
+    const uploadDir = process.env.UPLOAD_DIR || './uploads';
     const dir = path.join(uploadDir, 'exports');
     fs.mkdirSync(dir, { recursive: true });
     const filePath = path.join(dir, `${importType}_template.xlsx`);

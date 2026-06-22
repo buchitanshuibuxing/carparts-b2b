@@ -21,7 +21,7 @@ export class ImportExportController {
   @Get('template')
   async getTemplate(@Query('type') type: string, @Res() res: Response) {
     const result = await this.svc.exportTemplate(type);
-    const uploadDir = process.env.UPLOAD_DEST || './uploads';
+    const uploadDir = process.env.UPLOAD_DIR || './uploads';
     res.download(path.join(uploadDir, result.path), `${type}_template.xlsx`);
   }
 }

@@ -154,7 +154,7 @@ export class FacebookService {
 
   // ---- Facebook Graph API helpers ----
   private async uploadPhotoToFacebook(pageId: string, accessToken: string, imagePath: string): Promise<string | null> {
-    const uploadDir = process.env.UPLOAD_DEST || './uploads';
+    const uploadDir = process.env.UPLOAD_DIR || './uploads';
     const fs = require('fs');
     const FormData = require('form-data');
     const filePath = require('path').join(uploadDir, imagePath);

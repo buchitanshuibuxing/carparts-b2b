@@ -712,7 +712,7 @@ export class AssetsService {
   }
 
   private async deleteAssetFiles(asset: ImageAsset) {
-    const uploadDir = process.env.UPLOAD_DEST || './uploads';
+    const uploadDir = process.env.UPLOAD_DIR || './uploads';
     const filesToDelete = [asset.filePath, asset.thumbnailSmallPath, asset.thumbnailMediumPath, asset.thumbnailLargePath].filter(Boolean);
     for (const f of filesToDelete) {
       try { await fs.unlink(path.join(uploadDir, f)); } catch {}
