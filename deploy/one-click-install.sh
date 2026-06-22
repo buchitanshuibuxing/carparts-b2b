@@ -7,6 +7,10 @@
 
 set -e
 
+# 设置非交互模式，避免提示
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+
 # 颜色
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -43,8 +47,13 @@ fi
 
 # 2. 更新系统
 print_info "更新系统..."
+export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get upgrade -y -qq
+
+# 自动处理 outdated libraries 问题
+print_info "处理系统服务..."
+needrestart -r a 2>/dev/null || true
 
 # 3. 安装依赖
 print_info "安装依赖..."
