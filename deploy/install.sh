@@ -269,7 +269,10 @@ print_info "构建前端..."
 cd frontend
 npm install
 npm run build
-cp -r dist/* ../frontend/ 2>/dev/null || true
+
+# 复制构建产物到项目目录
+print_info "部署前端..."
+cp -r dist/* "$PROJECT_DIR/frontend/"
 cd ..
 print_success "前端构建完成"
 
@@ -291,6 +294,7 @@ module.exports = {
     env: {
       NODE_ENV: 'production',
       PORT: 3000,
+      UPLOAD_DIR: '$PROJECT_DIR/uploads',
     },
     max_memory_restart: '1G',
     error_file: '$PROJECT_DIR/logs/error.log',
@@ -311,12 +315,18 @@ mkdir -p $PROJECT_DIR/logs
 mkdir -p $PROJECT_DIR/uploads
 mkdir -p $PROJECT_DIR/uploads/images
 mkdir -p $PROJECT_DIR/uploads/thumbnails
+mkdir -p $PROJECT_DIR/uploads/videos
 
 # 修复权限（重要！PM2 以当前用户运行，需要有写入权限）
 print_info "修复目录权限..."
 chown -R $USER:$USER $PROJECT_DIR/uploads
 chown -R $USER:$USER $PROJECT_DIR/logs
 chmod 755 $PROJECT_DIR/uploads
+
+# 杀掉可能占用端口的旧进程
+print_info "清理旧进程..."
+fuser -k 3000/tcp 2>/dev/null || true
+sleep 2
 
 print_info "启动服务..."
 cd $PROJECT_DIR
@@ -485,7 +495,7 @@ update_code() {
     cd frontend
     npm install
     npm run build
-    cp -r dist/* ../frontend/ 2>/dev/null || true
+    cp -r dist/* $PROJECT_DIR/frontend/
     cd ..
 
     echo "重启服务..."
