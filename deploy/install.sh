@@ -2,8 +2,15 @@
 
 # ============================================================
 # CarParts B2B 一键部署脚本
-# 用法: bash install.sh
+# 用法: sudo bash install.sh
 # ============================================================
+
+# 检查是否为 root 用户
+if [ "$EUID" -ne 0 ]; then
+    echo "请使用 root 用户运行此脚本"
+    echo "用法: sudo bash install.sh"
+    exit 1
+fi
 
 # 设置非交互模式
 export DEBIAN_FRONTEND=noninteractive
@@ -287,16 +294,13 @@ module.exports = {
 EOF
 print_success "PM2 配置完成"
 
-# 18. 修复权限并启动服务
-print_info "修复权限..."
-sudo chown -R $USER:$(id -gn) $PROJECT_DIR/backend
-sudo chown -R $USER:$(id -gn) $PROJECT_DIR/frontend
+# 18. 创建目录并启动服务
+print_info "创建目录..."
 mkdir -p $PROJECT_DIR/logs
 mkdir -p $PROJECT_DIR/uploads
-sudo chown -R $USER:$(id -gn) $PROJECT_DIR/logs
-sudo chown -R $USER:$(id -gn) $PROJECT_DIR/uploads
 
 print_info "启动服务..."
+cd $PROJECT_DIR
 pm2 start ecosystem.config.js
 pm2 save
 print_success "服务启动完成"
