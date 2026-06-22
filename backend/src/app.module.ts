@@ -19,6 +19,7 @@ import { ImportExportModule } from './import-export/import-export.module';
 import { SettingsModule } from './settings/settings.module';
 import { TodosModule } from './todos/todos.module';
 import { SystemModule } from './system/system.module';
+import { InstallModule } from './install/install.module';
 import { DatabaseModule } from './database/database.module';
 import { CommonModule } from './common/common.module';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -67,6 +68,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     SettingsModule,
     TodosModule,
     SystemModule,
+    InstallModule,
   ],
 })
 export class AppModule {}

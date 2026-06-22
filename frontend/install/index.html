@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CarParts B2B - 安装向导</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .container { background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); padding: 40px; max-width: 500px; width: 90%; }
+        h1 { text-align: center; color: #1e40af; margin-bottom: 30px; font-size: 24px; }
+        .step { display: none; }
+        .step.active { display: block; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-weight: 500; color: #374151; }
+        input, select { width: 100%; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; }
+        input:focus, select:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+        .btn { width: 100%; padding: 14px; background: #1e40af; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 500; cursor: pointer; }
+        .btn:hover { background: #1e3a8a; }
+        .btn:disabled { background: #9ca3af; cursor: not-allowed; }
+        .btn-secondary { background: #6b7280; margin-top: 10px; }
+        .btn-secondary:hover { background: #4b5563; }
+        .progress { text-align: center; padding: 40px; }
+        .spinner { border: 4px solid #e5e7eb; border-top: 4px solid #3b82f6; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 20px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .success { text-align: center; color: #059669; }
+        .success h2 { margin-bottom: 20px; }
+        .error { color: #dc2626; background: #fef2f2; padding: 12px; border-radius: 8px; margin-bottom: 20px; display: none; }
+        .info { background: #eff6ff; padding: 12px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; color: #1e40af; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚗 CarParts B2B 安装向导</h1>
+
+        <!-- 步骤 1: 数据库配置 -->
+        <div id="step1" class="step active">
+            <h3 style="margin-bottom: 20px; color: #374151;">数据库配置</h3>
+            <div class="info">请确保 PostgreSQL 已安装并运行</div>
+            <div class="error" id="dbError"></div>
+            <div class="form-group">
+                <label>数据库主机</label>
+                <input type="text" id="dbHost" value="127.0.0.1" placeholder="127.0.0.1">
+            </div>
+            <div class="form-group">
+                <label>数据库端口</label>
+                <input type="text" id="dbPort" value="5432" placeholder="5432">
+            </div>
+            <div class="form-group">
+                <label>数据库用户</label>
+                <input type="text" id="dbUser" value="postgres" placeholder="postgres">
+            </div>
+            <div class="form-group">
+                <label>数据库密码</label>
+                <input type="password" id="dbPassword" placeholder="输入数据库密码">
+            </div>
+            <div class="form-group">
+                <label>数据库名称</label>
+                <input type="text" id="dbName" value="carparts" placeholder="carparts">
+            </div>
+            <button class="btn" onclick="testConnection()">测试连接</button>
+        </div>
+
+        <!-- 步骤 2: 管理员设置 -->
+        <div id="step2" class="step">
+            <h3 style="margin-bottom: 20px; color: #374151;">管理员设置</h3>
+            <div class="form-group">
+                <label>管理员用户名</label>
+                <input type="text" id="adminUser" value="admin" placeholder="admin">
+            </div>
+            <div class="form-group">
+                <label>管理员密码</label>
+                <input type="password" id="adminPassword" placeholder="设置管理员密码">
+            </div>
+            <div class="form-group">
+                <label>确认密码</label>
+                <input type="password" id="adminPasswordConfirm" placeholder="再次输入密码">
+            </div>
+            <div class="form-group">
+                <label>管理员邮箱</label>
+                <input type="email" id="adminEmail" placeholder="admin@example.com">
+            </div>
+            <button class="btn" onclick="install()">开始安装</button>
+            <button class="btn btn-secondary" onclick="showStep(1)">上一步</button>
+        </div>
+
+        <!-- 步骤 3: 安装中 -->
+        <div id="step3" class="step">
+            <div class="progress">
+                <div class="spinner"></div>
+                <p id="installStatus">正在安装...</p>
+            </div>
+        </div>
+
+        <!-- 步骤 4: 安装完成 -->
+        <div id="step4" class="step">
+            <div class="success">
+                <h2>✅ 安装成功！</h2>
+                <p style="margin-bottom: 20px;">CarParts B2B 已成功安装</p>
+                <div class="info" style="text-align: left;">
+                    <p><strong>访问地址:</strong> <span id="siteUrl"></span></p>
+                    <p><strong>管理员:</strong> <span id="adminInfo"></span></p>
+                </div>
+                <button class="btn" onclick="goToSite()">进入系统</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let dbConfig = {};
+
+        function showStep(n) {
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+            document.getElementById('step' + n).classList.add('active');
+        }
+
+        async function testConnection() {
+            const errorEl = document.getElementById('dbError');
+            errorEl.style.display = 'none';
+
+            dbConfig = {
+                host: document.getElementById('dbHost').value,
+                port: document.getElementById('dbPort').value,
+                user: document.getElementById('dbUser').value,
+                password: document.getElementById('dbPassword').value,
+                name: document.getElementById('dbName').value
+            };
+
+            try {
+                const res = await fetch('/api/install/test-db', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(dbConfig)
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    showStep(2);
+                } else {
+                    errorEl.textContent = data.message || '连接失败';
+                    errorEl.style.display = 'block';
+                }
+            } catch (err) {
+                errorEl.textContent = '连接失败: ' + err.message;
+                errorEl.style.display = 'block';
+            }
+        }
+
+        async function install() {
+            const password = document.getElementById('adminPassword').value;
+            const passwordConfirm = document.getElementById('adminPasswordConfirm').value;
+
+            if (password !== passwordConfirm) {
+                alert('两次密码不一致');
+                return;
+            }
+
+            showStep(3);
+
+            const config = {
+                ...dbConfig,
+                adminUser: document.getElementById('adminUser').value,
+                adminPassword: password,
+                adminEmail: document.getElementById('adminEmail').value
+            };
+
+            try {
+                const res = await fetch('/api/install', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    document.getElementById('siteUrl').textContent = window.location.origin;
+                    document.getElementById('adminInfo').textContent = config.adminUser;
+                    showStep(4);
+                } else {
+                    alert('安装失败: ' + data.message);
+                    showStep(2);
+                }
+            } catch (err) {
+                alert('安装失败: ' + err.message);
+                showStep(2);
+            }
+        }
+
+        function goToSite() {
+            window.location.href = '/';
+        }
+
+        // 检查是否已安装
+        fetch('/api/install/status').then(r => r.json()).then(data => {
+            if (data.installed) {
+                document.getElementById('siteUrl').textContent = window.location.origin;
+                document.getElementById('adminInfo').textContent = data.adminUser || 'admin';
+                showStep(4);
+            }
+        }).catch(() => {});
+    </script>
+</body>
+</html>
