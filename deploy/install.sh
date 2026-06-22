@@ -200,6 +200,9 @@ print_info "检查数据库表..."
 PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U $DB_USER -d $DB_NAME -c "
 ALTER TABLE users ADD COLUMN IF NOT EXISTS department VARCHAR(100);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500);
+ALTER TABLE image_assets ADD COLUMN IF NOT EXISTS type VARCHAR(20) DEFAULT 'image';
+ALTER TABLE image_assets ADD COLUMN IF NOT EXISTS file_md5 VARCHAR(32);
+ALTER TABLE image_assets ADD COLUMN IF NOT EXISTS duration INTEGER DEFAULT 0;
 " 2>/dev/null || print_warning "列可能已存在"
 
 # 15. 创建管理员用户
@@ -236,7 +239,10 @@ async function createAdmin() {
     );
 
     if (adminCheck.rows.length > 0) {
-        console.log('管理员用户已存在');
+        console.log('管理员用户已存在，重置密码...');
+        const hash = await bcrypt.hash('$ADMIN_PASSWORD', 10);
+        await client.query('UPDATE users SET password_hash = \\\$1 WHERE username = \\'admin\\'', [hash]);
+        console.log('管理员密码已重置为: $ADMIN_PASSWORD');
         await client.end();
         return;
     }
