@@ -78,13 +78,14 @@ print_success "PostgreSQL 已安装"
 
 # 6. 配置数据库
 print_info "配置数据库..."
+cd /tmp
 sudo -u postgres psql -c "CREATE DATABASE $DB_NAME;" 2>/dev/null || true
 sudo -u postgres psql -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASSWORD';" 2>/dev/null || true
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;" 2>/dev/null || true
 sudo -u postgres psql -c "ALTER USER $DB_USER WITH SUPERUSER;" 2>/dev/null || true
 
 # 配置 pg_hba.conf
-PG_VERSION=$(sudo -u postgres psql -t -c "SHOW server_version;" | grep -oP '^\d+')
+PG_VERSION=$(cd /tmp && sudo -u postgres psql -t -c "SHOW server_version;" | grep -oP '^\d+')
 PG_HBA="/etc/postgresql/$PG_VERSION/main/pg_hba.conf"
 if [ -f "$PG_HBA" ]; then
     if ! grep -q "$DB_USER" "$PG_HBA"; then
