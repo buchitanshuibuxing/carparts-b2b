@@ -84,13 +84,17 @@ sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;
 sudo -u postgres psql -c "ALTER USER $DB_USER WITH SUPERUSER;" 2>/dev/null || true
 
 # 配置 pg_hba.conf
-PG_VERSION=$(sudo -u postgres psql -t -c "SELECT version();" | grep -oP '\d+\.\d+' | head -1)
+PG_VERSION=$(sudo -u postgres psql -t -c "SHOW server_version;" | grep -oP '^\d+')
 PG_HBA="/etc/postgresql/$PG_VERSION/main/pg_hba.conf"
-if ! grep -q "$DB_USER" "$PG_HBA"; then
-    echo "local   all   $DB_USER   md5" | sudo tee -a "$PG_HBA"
-    echo "host    all   $DB_USER   127.0.0.1/32   md5" | sudo tee -a "$PG_HBA"
+if [ -f "$PG_HBA" ]; then
+    if ! grep -q "$DB_USER" "$PG_HBA"; then
+        echo "local   all   $DB_USER   md5" | sudo tee -a "$PG_HBA"
+        echo "host    all   $DB_USER   127.0.0.1/32   md5" | sudo tee -a "$PG_HBA"
+    fi
+    sudo systemctl restart postgresql
+else
+    print_warning "pg_hba.conf 未找到，跳过配置"
 fi
-sudo systemctl restart postgresql
 print_success "数据库配置完成"
 
 # 7. 安装 Nginx
