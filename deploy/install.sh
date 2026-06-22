@@ -309,6 +309,14 @@ print_success "PM2 配置完成"
 print_info "创建目录..."
 mkdir -p $PROJECT_DIR/logs
 mkdir -p $PROJECT_DIR/uploads
+mkdir -p $PROJECT_DIR/uploads/images
+mkdir -p $PROJECT_DIR/uploads/thumbnails
+
+# 修复权限（重要！PM2 以当前用户运行，需要有写入权限）
+print_info "修复目录权限..."
+chown -R $USER:$USER $PROJECT_DIR/uploads
+chown -R $USER:$USER $PROJECT_DIR/logs
+chmod 755 $PROJECT_DIR/uploads
 
 print_info "启动服务..."
 cd $PROJECT_DIR
