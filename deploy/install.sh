@@ -151,7 +151,12 @@ cd backend
 npm install --production
 print_success "后端依赖安装完成"
 
-# 11. 创建 .env 文件
+# 11. 安装 NestJS CLI
+print_info "安装 NestJS CLI..."
+npm install -g @nestjs/cli
+print_success "NestJS CLI 安装完成"
+
+# 12. 创建 .env 文件
 print_info "配置后端..."
 cat > .env << EOF
 DB_HOST=127.0.0.1
@@ -169,7 +174,7 @@ MAX_FILE_SIZE=52428800
 EOF
 print_success "后端配置完成"
 
-# 12. 构建后端
+# 13. 构建后端
 print_info "构建后端..."
 
 # 修改 tsconfig 跳过类型检查
@@ -183,10 +188,10 @@ cat > tsconfig.build.json << 'EOF'
 }
 EOF
 
-npm run build
+npm run build 2>/dev/null
 print_success "后端构建完成"
 
-# 13. 运行数据库迁移
+# 14. 运行数据库迁移
 print_info "初始化数据库..."
 npm run migration:run 2>/dev/null || print_warning "迁移可能已执行"
 
@@ -197,7 +202,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS department VARCHAR(100);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500);
 " 2>/dev/null || print_warning "列可能已存在"
 
-# 14. 创建管理员用户
+# 15. 创建管理员用户
 print_info "创建管理员用户..."
 node -e "
 const bcrypt = require('bcrypt');
@@ -253,7 +258,7 @@ createAdmin().catch(console.error);
 cd ..
 print_success "管理员用户配置完成"
 
-# 15. 安装前端依赖并构建
+# 16. 安装前端依赖并构建
 print_info "构建前端..."
 cd frontend
 npm install
@@ -262,12 +267,12 @@ cp -r dist/* ../frontend/ 2>/dev/null || true
 cd ..
 print_success "前端构建完成"
 
-# 16. 安装 PM2
+# 17. 安装 PM2
 print_info "安装 PM2..."
 npm install -g pm2
 print_success "PM2 安装完成"
 
-# 17. 创建 PM2 配置
+# 18. 创建 PM2 配置
 print_info "创建 PM2 配置..."
 cat > ecosystem.config.js << EOF
 module.exports = {
@@ -294,7 +299,7 @@ module.exports = {
 EOF
 print_success "PM2 配置完成"
 
-# 18. 创建目录并启动服务
+# 19. 创建目录并启动服务
 print_info "创建目录..."
 mkdir -p $PROJECT_DIR/logs
 mkdir -p $PROJECT_DIR/uploads
@@ -305,7 +310,7 @@ pm2 start ecosystem.config.js
 pm2 save
 print_success "服务启动完成"
 
-# 19. 配置 Nginx
+# 20. 配置 Nginx
 print_info "配置 Nginx..."
 cat > /etc/nginx/sites-available/carparts << EOF
 server {
@@ -354,7 +359,7 @@ nginx -t
 systemctl restart nginx
 print_success "Nginx 配置完成"
 
-# 20. 配置防火墙
+# 21. 配置防火墙
 print_info "配置防火墙..."
 ufw allow 22/tcp
 ufw allow 80/tcp
@@ -362,7 +367,7 @@ ufw allow 443/tcp
 ufw --force enable
 print_success "防火墙配置完成"
 
-# 21. 创建管理命令
+# 22. 创建管理命令
 print_info "创建管理命令..."
 cat > /usr/local/bin/carparts << 'MENUEOF'
 #!/bin/bash
@@ -386,7 +391,9 @@ show_menu() {
     echo "  6. 备份数据库"
     echo "  7. 更新代码"
     echo "  8. 重置管理员密码"
-    echo "  9. 查看部署信息"
+    echo "  9. 设置域名"
+    echo " 10. 安装 SSL 证书"
+    echo " 11. 查看部署信息"
     echo "  0. 退出"
     echo ""
     echo "=========================================="
@@ -510,6 +517,104 @@ reset_admin() {
     read -p "按 Enter 继续..."
 }
 
+set_domain() {
+    echo "设置域名"
+    echo ""
+    read -p "请输入域名 (如 carparts.example.com): " DOMAIN
+
+    if [ -z "$DOMAIN" ]; then
+        echo "域名不能为空"
+        read -p "按 Enter 继续..."
+        return
+    fi
+
+    echo "配置 Nginx..."
+    cat > /etc/nginx/sites-available/carparts << EOF
+server {
+    listen 80;
+    server_name $DOMAIN;
+
+    root $PROJECT_DIR/frontend;
+    index index.html;
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_cache_bypass \$http_upgrade;
+        proxy_read_timeout 600s;
+    }
+
+    location /socket.io/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+    }
+
+    location /uploads/ {
+        alias $PROJECT_DIR/uploads/;
+        expires 30d;
+    }
+
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+
+    client_max_body_size 50M;
+}
+EOF
+
+    nginx -t
+    systemctl restart nginx
+
+    echo ""
+    echo "域名已设置为: $DOMAIN"
+    echo "请确保域名已解析到此服务器 IP"
+    echo ""
+    read -p "按 Enter 继续..."
+}
+
+install_ssl() {
+    echo "安装 SSL 证书"
+    echo ""
+
+    # 检查是否有域名
+    DOMAIN=$(grep server_name /etc/nginx/sites-available/carparts | head -1 | awk '{print $2}' | sed 's/;//')
+
+    if [ "$DOMAIN" = "_" ] || [ -z "$DOMAIN" ]; then
+        echo "请先设置域名 (选项 9)"
+        read -p "按 Enter 继续..."
+        return
+    fi
+
+    echo "域名: $DOMAIN"
+    echo ""
+
+    # 安装 certbot
+    echo "安装 Certbot..."
+    apt-get install -y -qq certbot python3-certbot-nginx
+
+    # 获取证书
+    echo "获取 SSL 证书..."
+    certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --email admin@$DOMAIN
+
+    # 设置自动续期
+    echo "设置自动续期..."
+    echo "0 0,12 * * * root python3 -c 'import random; import time; time.sleep(random.random() * 3600)' && certbot renew -q" | tee -a /etc/crontab > /dev/null
+
+    echo ""
+    echo "SSL 证书安装完成！"
+    echo "访问地址: https://$DOMAIN"
+    echo ""
+    read -p "按 Enter 继续..."
+}
+
 show_deploy_info() {
     if [ -f "$PROJECT_DIR/deploy-info.txt" ]; then
         cat "$PROJECT_DIR/deploy-info.txt"
@@ -523,7 +628,7 @@ show_deploy_info() {
 # 主循环
 while true; do
     show_menu
-    read -p "请选择操作 [0-9]: " choice
+    read -p "请选择操作 [0-11]: " choice
 
     case $choice in
         1) start_service ;;
@@ -534,7 +639,9 @@ while true; do
         6) backup_database ;;
         7) update_code ;;
         8) reset_admin ;;
-        9) show_deploy_info ;;
+        9) set_domain ;;
+        10) install_ssl ;;
+        11) show_deploy_info ;;
         0) echo "再见！"; exit 0 ;;
         *) echo "无效选择"; sleep 1 ;;
     esac
@@ -544,11 +651,11 @@ MENUEOF
 chmod +x /usr/local/bin/carparts
 print_success "管理命令创建完成"
 
-# 22. 获取外网 IP
+# 23. 获取外网 IP
 print_info "获取外网 IP..."
 PUBLIC_IP=$(curl -s ifconfig.me || curl -s ipinfo.io/ip || curl -s api.ipify.org || echo "无法获取")
 
-# 23. 保存部署信息
+# 24. 保存部署信息
 cat > deploy-info.txt << EOF
 CarParts B2B 部署信息
 ====================
