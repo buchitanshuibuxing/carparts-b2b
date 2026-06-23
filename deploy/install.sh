@@ -270,9 +270,15 @@ cd frontend
 npm install
 npm run build
 
-# 复制构建产物到项目目录
+# 清理旧的前端文件并复制新的构建产物
 print_info "部署前端..."
+rm -rf "$PROJECT_DIR/frontend/assets" 2>/dev/null || true
 cp -r dist/* "$PROJECT_DIR/frontend/"
+
+# 修复前端文件权限
+chown -R $USER:$USER "$PROJECT_DIR/frontend"
+chmod -R 755 "$PROJECT_DIR/frontend"
+
 cd ..
 print_success "前端构建完成"
 
