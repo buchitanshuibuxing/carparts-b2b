@@ -13,12 +13,25 @@ define('ROOT_PATH', dirname(__DIR__));
 define('PUBLIC_PATH', __DIR__);
 define('APP_PATH', ROOT_PATH . '/app');
 define('CONFIG_PATH', ROOT_PATH . '/config');
-define('VIEW_PATH', ROOT_PATH . '/resources/views');
 define('UPLOAD_PATH', PUBLIC_PATH . '/uploads');
 
+// 检查是否已安装
+$isInstalled = file_exists(ROOT_PATH . '/.installed');
+
+// 如果未安装，显示安装向导
+if (!$isInstalled && !str_contains($_SERVER['REQUEST_URI'], '/install')) {
+    // 检查 install.php 是否存在
+    if (file_exists(ROOT_PATH . '/install.php')) {
+        header('Location: /install.php');
+        exit;
+    }
+}
+
 // 加载配置
-require_once ROOT_PATH . '/config/app.php';
-require_once ROOT_PATH . '/config/database.php';
+if ($isInstalled) {
+    require_once CONFIG_PATH . '/app.php';
+    require_once CONFIG_PATH . '/database.php';
+}
 
 // 自动加载
 spl_autoload_register(function ($class) {
@@ -69,6 +82,12 @@ class Router {
 
         // 处理 API 路由
         if (strpos($uri, '/api/') === 0) {
+            if (!$GLOBALS['isInstalled']) {
+                header('Content-Type: application/json');
+                http_response_code(503);
+                echo json_encode(['error' => '系统未安装，请先运行安装向导']);
+                return;
+            }
             header('Content-Type: application/json');
             self::handleApi($method, $uri);
             return;
@@ -121,7 +140,9 @@ class Router {
 }
 
 // 加载路由
-require_once ROOT_PATH . '/routes/api.php';
+if ($isInstalled) {
+    require_once ROOT_PATH . '/routes/api.php';
+}
 
 // 启动路由
 Router::dispatch();

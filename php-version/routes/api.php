@@ -36,6 +36,7 @@ Router::get('/api/customers/{id}', [CustomersController::class, 'show']);
 Router::post('/api/customers', [CustomersController::class, 'store']);
 Router::put('/api/customers/{id}', [CustomersController::class, 'update']);
 Router::delete('/api/customers/{id}', [CustomersController::class, 'destroy']);
+Router::put('/api/customers/{id}/toggle', [CustomersController::class, 'toggle']);
 
 // 供应商路由
 Router::get('/api/suppliers', [SuppliersController::class, 'index']);
