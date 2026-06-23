@@ -330,8 +330,10 @@ mkdir -p $PROJECT_DIR/uploads/videos
 print_info "修复目录权限..."
 chown -R ubuntu:ubuntu $PROJECT_DIR/uploads
 chown -R ubuntu:ubuntu $PROJECT_DIR/logs
+chown -R www-data:www-data $PROJECT_DIR/frontend
 chmod -R 755 $PROJECT_DIR/uploads
 chmod -R 755 $PROJECT_DIR/logs
+chmod -R 755 $PROJECT_DIR/frontend
 
 # 杀掉可能占用端口的旧进程
 print_info "清理旧进程..."
