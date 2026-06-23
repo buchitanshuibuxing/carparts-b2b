@@ -3,65 +3,88 @@
 ## 快速部署（宝塔面板）
 
 ### 1. 上传文件
-将 `php-version` 目录中的所有文件上传到网站根目录
 
-### 2. 配置网站
+将所有文件上传到网站根目录
+
+### 2. 设置运行目录
+
 在宝塔面板中：
-- 创建网站
-- 设置运行目录为 `/public`
-- PHP 版本选择 8.0+
+- 网站 → 设置 → 网站目录
+- **运行目录** 改为 `/public`
+- 保存
 
-### 3. 配置数据库
+### 3. 配置伪静态
+
 在宝塔面板中：
-- 创建 MySQL 数据库
-- 记录数据库名、用户名、密码
+- 网站 → 设置 → 伪静态
+- 选择 **Laravel**
+- 保存
 
-### 4. 运行安装
-访问 `http://your-domain/install.php`
-- 输入数据库信息
-- 设置管理员账号
-- 点击安装
+### 4. 修复权限
 
-### 5. 完成
-安装完成后访问 `http://your-domain` 即可使用
+SSH 登录服务器执行：
+
+```bash
+# 创建 uploads 目录
+mkdir -p /www/wwwroot/你的IP/public/uploads
+
+# 修复权限
+chmod 777 /www/wwwroot/你的IP/
+chmod -R 777 /www/wwwroot/your-ip/public/uploads
+chmod -R 777 /www/wwwroot/your-ip/config
+```
+
+或者运行修复脚本：
+
+```bash
+chmod +x fix-permissions.sh
+sudo bash fix-permissions.sh
+```
+
+### 5. 安装
+
+访问 `http://你的IP/` 会自动跳转到安装页面
+
+### 6. 登录
+
+- 用户名：admin
+- 密码：安装时设置的密码
+
+---
 
 ## 目录结构
 
 ```
-php-version/
-├── app/
-│   ├── Controllers/     # 控制器
-│   ├── Models/          # 模型
-│   ├── Services/        # 服务
-│   └── Database.php     # 数据库连接
-├── config/
-│   ├── app.php          # 应用配置
-│   └── database.php     # 数据库配置
-├── database/
-│   └── migrations/      # 数据库迁移
-├── public/
-│   ├── assets/          # 前端资源
-│   ├── uploads/         # 上传文件
-│   ├── .htaccess        # URL 重写
-│   └── index.php        # 入口文件
-├── resources/
-│   └── views/           # 视图模板
-├── routes/
-│   └── api.php          # API 路由
-└── install.php          # 安装脚本
+├── app/                    # 应用代码
+│   └── Controllers/        # 控制器
+├── config/                 # 配置文件
+├── database/               # 数据库迁移
+├── public/                 # 网站根目录
+│   ├── assets/             # 前端资源
+│   ├── uploads/            # 上传文件
+│   ├── .htaccess           # Apache 重写规则
+│   ├── index.html          # 前端入口
+│   └── index.php           # 后端入口
+├── routes/                 # 路由定义
+├── install.php             # 安装脚本
+└── fix-permissions.sh      # 权限修复脚本
 ```
 
-## 环境要求
+## Nginx 配置（手动）
 
-- PHP 8.0+
-- MySQL 5.7+
-- Apache/Nginx
-- PHP 扩展：pdo, pdo_mysql, json, mbstring, curl, openssl
+如果伪静态不生效，手动添加 Nginx 配置：
 
-## 默认账号
+```nginx
+location / {
+    try_files $uri $uri/ /index.php?$query_string;
+}
 
-- 用户名：admin
-- 密码：admin123
+location ~ \.php$ {
+    fastcgi_pass unix:/run/php/php8.2-fpm.sock;
+    fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    include fastcgi_params;
+}
+```
 
 ## 功能
 
@@ -75,3 +98,11 @@ php-version/
 - ✅ 待办事项
 - ✅ 系统设置
 - ✅ 百度翻译
+- ✅ 系统监控
+
+## 环境要求
+
+- PHP 8.0+
+- MySQL 5.7+
+- Apache/Nginx
+- PHP 扩展：pdo, pdo_mysql, json, mbstring, curl, openssl

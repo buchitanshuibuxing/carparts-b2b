@@ -120,8 +120,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             file_put_contents(__DIR__ . '/config/database.php', $configContent);
 
-            // 创建安装标记
-            file_put_contents(__DIR__ . '/.installed', date('Y-m-d H:i:s'));
+            // 创建 uploads 目录
+            $uploadsDir = __DIR__ . '/public/uploads';
+            if (!is_dir($uploadsDir)) {
+                mkdir($uploadsDir, 0777, true);
+            }
+
+            // 创建安装标记（忽略权限错误）
+            @file_put_contents(__DIR__ . '/.installed', date('Y-m-d H:i:s'));
 
             $step = 3;
             $success = '安装成功！';
