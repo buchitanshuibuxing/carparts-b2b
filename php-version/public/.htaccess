@@ -1,0 +1,15 @@
+RewriteEngine On
+
+# 处理 API 请求
+RewriteRule ^api/(.*)$ index.php [QSA,L]
+
+# 处理静态资源
+RewriteRule ^assets/(.*)$ - [L]
+RewriteRule ^uploads/(.*)$ - [L]
+RewriteRule ^favicon\.svg$ - [L]
+RewriteRule ^icons\.svg$ - [L]
+
+# 其他请求转发到前端
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.html [L]
