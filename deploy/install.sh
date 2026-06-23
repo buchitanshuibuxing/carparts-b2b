@@ -275,8 +275,9 @@ print_info "部署前端..."
 rm -rf "$PROJECT_DIR/frontend/assets" 2>/dev/null || true
 cp -r dist/* "$PROJECT_DIR/frontend/"
 
-# 修复前端文件权限
-chown -R $USER:$USER "$PROJECT_DIR/frontend"
+# 修复前端文件权限（Nginx 使用 www-data 用户）
+print_info "修复前端文件权限..."
+chown -R www-data:www-data "$PROJECT_DIR/frontend"
 chmod -R 755 "$PROJECT_DIR/frontend"
 
 cd ..
