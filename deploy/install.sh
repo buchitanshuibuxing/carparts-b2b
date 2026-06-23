@@ -324,11 +324,14 @@ mkdir -p $PROJECT_DIR/uploads/images
 mkdir -p $PROJECT_DIR/uploads/thumbnails
 mkdir -p $PROJECT_DIR/uploads/videos
 
-# 修复权限（重要！PM2 以当前用户运行，需要有写入权限）
+# 修复权限
+# uploads 和 logs 需要 ubuntu 用户可写（PM2 以 ubuntu 运行）
+# frontend 需要 www-data 用户可读（Nginx 以 www-data 运行）
 print_info "修复目录权限..."
-chown -R $USER:$USER $PROJECT_DIR/uploads
-chown -R $USER:$USER $PROJECT_DIR/logs
-chmod 755 $PROJECT_DIR/uploads
+chown -R ubuntu:ubuntu $PROJECT_DIR/uploads
+chown -R ubuntu:ubuntu $PROJECT_DIR/logs
+chmod -R 755 $PROJECT_DIR/uploads
+chmod -R 755 $PROJECT_DIR/logs
 
 # 杀掉可能占用端口的旧进程
 print_info "清理旧进程..."
